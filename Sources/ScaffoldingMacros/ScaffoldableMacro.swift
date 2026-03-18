@@ -237,12 +237,12 @@ public struct ScaffoldableMacro: MemberMacro {
         
         let accessModifier = isPublic ? "public " : ""
         
-        let destinationsEnum = try EnumDeclSyntax("\(raw: accessModifier)enum Destinations: @MainActor Destinationable") {
+        let destinationsEnum = try EnumDeclSyntax("\(raw: accessModifier)enum Destinations: Destinationable") {
             // typealias Owner = ClassName
             DeclSyntax("\(raw: accessModifier)typealias Owner = \(raw: className)")
             
             // Meta enum
-            try EnumDeclSyntax("\(raw: accessModifier)enum Meta: @MainActor DestinationMeta") {
+            try EnumDeclSyntax("\(raw: accessModifier)enum Meta: DestinationMeta") {
                 for caseElement in metaCases {
                     EnumCaseDeclSyntax {
                         caseElement
