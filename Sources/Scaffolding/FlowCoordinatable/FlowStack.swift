@@ -163,6 +163,13 @@ extension FlowStack {
 
     func setRoot(root: Destination, animation: Animation?) {
          withAnimation(animation ?? self.animation) {
+             // Clear pushed destinations before replacing the root.
+             // Destinations were pushed relative to the old root and are
+             // invalid once the root changes. Clearing them first ensures
+             // the NavigationStack path is empty before the root view
+             // switches, preventing a stale navigation bar.
+             destinations.removeAll()
+
              var mutableRoot = root
              mutableRoot.coordinatable?.setHasLayerNavigationCoordinatable(true)
 

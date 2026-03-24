@@ -545,6 +545,10 @@ public struct FlowCoordinatableView: CoordinatableView {
             view
                 .navigationDestination(for: Destination.self, destination: wrappedView)
         }
+        // Reset the NavigationStack identity when the root changes so that
+        // SwiftUI drops any stale internal navigation state (e.g. lingering
+        // navigation bar from a previous root's deep push hierarchy).
+        .id(_coordinator.anyStack.root?.id)
         .applySheets(from: _coordinator, modalContent: wrappedView)
         .applyFullScreenCovers(from: _coordinator, modalContent: wrappedView)
     }
