@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension View {
     func applySheets<ModalContent: View>(
@@ -14,7 +15,7 @@ extension View {
         modalContent: @escaping (Destination) -> ModalContent
     ) -> some View {
         let sheetDestinations = coordinator.modalDestinations(for: .sheet)
-        
+
         return self.sheet(
             item: Binding<Destination?>(
                 get: {
@@ -32,7 +33,7 @@ extension View {
                 .id(destination.id)
         }
     }
-    
+
     func applyFullScreenCovers<ModalContent: View>(
         from coordinator: any FlowCoordinatable,
         modalContent: @escaping (Destination) -> ModalContent
@@ -40,9 +41,8 @@ extension View {
 #if os(macOS)
         return self
 #else
-        
         let coverDestinations = coordinator.modalDestinations(for: .fullScreenCover)
-        
+
         return self.fullScreenCover(
             item: Binding<Destination?>(
                 get: {

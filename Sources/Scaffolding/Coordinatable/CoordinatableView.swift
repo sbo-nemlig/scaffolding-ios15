@@ -13,12 +13,14 @@ import SwiftUI
 /// ``RootCoordinatableView`` all conform to this protocol. It provides
 /// the ``wrappedView(_:)`` helper used internally to resolve a
 /// ``Destination`` into its final SwiftUI view tree.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol CoordinatableView: View {
     /// The coordinator this view belongs to.
     var coordinator: any Coordinatable { get }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension CoordinatableView {
     /// Resolves a ``Destination`` into its SwiftUI view, injecting the

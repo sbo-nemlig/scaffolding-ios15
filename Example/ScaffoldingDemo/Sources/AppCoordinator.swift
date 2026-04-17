@@ -1,6 +1,7 @@
 import SwiftUI
 import Scaffolding
 
+@available(iOS 17, *)
 @Scaffoldable @Observable
 final class AppCoordinator: @MainActor FlowCoordinatable {
     var stack = FlowStack<AppCoordinator>(root: .home)

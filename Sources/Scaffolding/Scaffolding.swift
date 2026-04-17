@@ -15,6 +15,7 @@
 ///     func detail(item: String) -> some View { DetailView(item: item) }
 /// }
 /// ```
+@available(iOS 17, macOS 14, *)
 @attached(member, names: named(Destinations))
 public macro Scaffoldable() = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldableMacro")
 
@@ -24,6 +25,7 @@ public macro Scaffoldable() = #externalMacro(module: "ScaffoldingMacros", type: 
 /// `@ScaffoldingTracked` when you want to be explicit about which functions
 /// participate in code generation — functions without the attribute are then
 /// excluded.
+@available(iOS 17, macOS 14, *)
 @attached(peer)
 public macro ScaffoldingTracked() = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingTrackedMacro")
 
@@ -36,5 +38,6 @@ public macro ScaffoldingTracked() = #externalMacro(module: "ScaffoldingMacros", 
 /// @ScaffoldingIgnored
 /// func helperView() -> some View { Text("Not a destination") }
 /// ```
+@available(iOS 17, macOS 14, *)
 @attached(peer)
 public macro ScaffoldingIgnored() = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingIgnoredMacro")

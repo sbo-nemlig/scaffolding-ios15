@@ -17,6 +17,7 @@ import os.log
 ///
 /// You do not conform to `Coordinatable` directly — use one of the
 /// three specialized protocols instead.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol Coordinatable: AnyObject, Identifiable {
     associatedtype Destinations: Destinationable where Destinations.Owner == Self
@@ -42,6 +43,7 @@ public protocol Coordinatable: AnyObject, Identifiable {
     func customize(_ view: AnyView) -> CustomizeContentView
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension Coordinatable {
     func customize(_ view: AnyView) -> some View {
@@ -104,6 +106,7 @@ public extension Coordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension Coordinatable {
     func customizeErased(_ view: AnyView) -> AnyView {
@@ -116,6 +119,7 @@ extension Coordinatable {
 ///
 /// The ``Scaffoldable()`` macro generates a conforming type automatically —
 /// you do not need to implement this protocol yourself.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol Destinationable {
     associatedtype Meta: DestinationMeta

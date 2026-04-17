@@ -10,6 +10,7 @@ import Observation
 
 /// A type-erased protocol for ``Root`` that allows the framework to
 /// manipulate root state without knowing the concrete coordinator type.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoordinatable {
     /// The current root destination.
@@ -29,6 +30,7 @@ public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoo
 /// ```swift
 /// var root = Root<AppCoordinator>(root: .login)
 /// ```
+@available(iOS 17, macOS 14, *)
 @MainActor
 @Observable
 public class Root<Coordinator: RootCoordinatable>: AnyRoot {
@@ -42,19 +44,19 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     public var animation: Animation? = .default
     /// The presentation type when this coordinator was presented modally.
     public var presentedAs: PresentationType?
-    
+
     /// Whether ``setup(for:)`` has been called.
     public var isSetup: Bool = false
     private var initialRoot: Coordinator.Destinations?
     private var coordinator: Coordinator?
-    
+
     /// Creates a new root container with the given initial destination.
     ///
     /// - Parameter root: The destination case to display initially.
     public init(root: Coordinator.Destinations) {
         self.initialRoot = root
     }
-    
+
     /// Performs one-time setup, resolving the initial root destination.
     ///
     /// - Parameter coordinator: The coordinator that owns this container.
@@ -62,10 +64,10 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
         guard !isSetup else { return }
         if let rootDestination = initialRoot, root == nil {
             var rootDest = rootDestination.value(for: coordinator)
-            
+
             rootDest.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinator)
             rootDest.coordinatable?.setParent(coordinator)
-            
+
             if let presentedAs = presentedAs {
                 rootDest.setPushType(presentedAs)
                 if let flowCoordinator = rootDest.coordinatable as? any FlowCoordinatable {
@@ -76,37 +78,38 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
                     rootCoordinator.setPresentedAs(presentedAs)
                 }
             }
-            
+
             root = rootDest
             self.initialRoot = nil
         }
         self.isSetup = true
     }
-    
+
     /// Sets the parent coordinator reference.
     public func setParent(_ parent: any Coordinatable) {
         self.parent = parent
     }
-    
+
     func setAnimation(animation: Animation?) {
         self.animation = animation
     }
 }
 
+@available(iOS 17, macOS 14, *)
 extension Root {
     func setRoot(root: Destination, animation: Animation?) {
         withAnimation(animation ?? self.animation) {
             var mutableRoot = root
             mutableRoot.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinator)
-            
+
             if let coordinator {
                 mutableRoot.coordinatable?.setParent(coordinator)
             }
-            
+
             if let presentedAs = presentedAs, mutableRoot.pushType == nil {
                 mutableRoot.setPushType(presentedAs)
             }
-            
+
             self.root = mutableRoot
         }
     }

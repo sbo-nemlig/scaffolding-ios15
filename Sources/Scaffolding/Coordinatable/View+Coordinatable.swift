@@ -7,20 +7,21 @@
 
 import SwiftUI
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension View {
     func environmentCoordinatable(_ object: Any) -> AnyView {
         let mirror = Mirror(reflecting: object)
-        
+
         guard mirror.displayStyle == .class else {
             return AnyView(self)
         }
-        
+
         let observableObject = object as AnyObject
-        
+
         if let observable = observableObject as? (any AnyObject & Observable) {
             var coordinators: [any AnyObject & Observable] = [observable]
-            
+
             if let coordinatable = observable as? any Coordinatable {
                 var currentParent = coordinatable.parent
                 while let parent = currentParent {
@@ -30,15 +31,15 @@ public extension View {
                     currentParent = parent.parent
                 }
             }
-            
+
             var result: any View = self
             for coordinator in coordinators {
                 result = result.environment(coordinator)
             }
-            
+
             return AnyView(result)
         }
-        
+
         return AnyView(self)
     }
 }

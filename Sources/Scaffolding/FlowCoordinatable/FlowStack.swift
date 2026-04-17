@@ -11,6 +11,7 @@ import Observation
 /// A type-erased protocol for ``FlowStack`` that allows the framework
 /// to manipulate navigation state without knowing the concrete coordinator
 /// type.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol AnyFlowStack: AnyObject, CoordinatableData where Coordinator: FlowCoordinatable {
     /// The root destination of the navigation stack.
@@ -32,6 +33,7 @@ public protocol AnyFlowStack: AnyObject, CoordinatableData where Coordinator: Fl
 /// ```swift
 /// var stack = FlowStack<HomeCoordinator>(root: .home)
 /// ```
+@available(iOS 17, macOS 14, *)
 @MainActor
 @Observable
 public class FlowStack<Coordinator: FlowCoordinatable>: AnyFlowStack {
@@ -93,6 +95,7 @@ public class FlowStack<Coordinator: FlowCoordinatable>: AnyFlowStack {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension FlowStack {
     func push(destination: Destination) {

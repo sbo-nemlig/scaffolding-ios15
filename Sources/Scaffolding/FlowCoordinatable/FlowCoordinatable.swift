@@ -27,6 +27,7 @@ import os.log
 /// ```
 ///
 /// Navigate with ``route(to:as:onDismiss:)`` and ``pop()``.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol FlowCoordinatable: Coordinatable where ViewType == FlowCoordinatableView {
     /// The observable navigation stack that holds this coordinator's state.
@@ -36,6 +37,7 @@ public protocol FlowCoordinatable: Coordinatable where ViewType == FlowCoordinat
     var anyStack: any AnyFlowStack { get }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension FlowCoordinatable {
     var _dataId: ObjectIdentifier {
@@ -74,6 +76,7 @@ public extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension FlowCoordinatable {
     func bindingStack(for presentationType: PresentationType) -> Binding<[Destination]> {
@@ -89,6 +92,7 @@ extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension FlowCoordinatable {
     func modalDestinations(for presentationType: PresentationType) -> [Destination] {
@@ -136,6 +140,7 @@ extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 private extension FlowCoordinatable {
     private func flattenDestinations(for presentationType: PresentationType) -> [Destination] {
@@ -272,6 +277,7 @@ private extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 private extension FlowCoordinatable {
     func traverseCoordinatable(_ coordinatable: (any Coordinatable)?, action: (any FlowCoordinatable) -> Void) {
@@ -311,6 +317,7 @@ private extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension FlowCoordinatable {
     /// Replaces the root destination of this flow coordinator.
@@ -466,6 +473,7 @@ public extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 private extension FlowCoordinatable {
     @discardableResult
@@ -503,6 +511,7 @@ private extension FlowCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension FlowCoordinatable {
     func setPresentedAs(_ type: PresentationType) {
@@ -518,6 +527,7 @@ extension FlowCoordinatable {
 ///
 /// You never create this view directly — call ``Coordinatable/view()``
 /// on a `FlowCoordinatable` coordinator to obtain it.
+@available(iOS 17, macOS 14, *)
 public struct FlowCoordinatableView: CoordinatableView {
     private let _coordinator: any FlowCoordinatable
 

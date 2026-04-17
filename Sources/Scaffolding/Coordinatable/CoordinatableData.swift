@@ -14,6 +14,7 @@ import SwiftUI
 /// `CoordinatableData`. The protocol provides parent tracking, lazy setup,
 /// and identity so that SwiftUI can diff coordinator hierarchies
 /// efficiently.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol CoordinatableData: Identifiable {
     associatedtype Coordinator: Coordinatable

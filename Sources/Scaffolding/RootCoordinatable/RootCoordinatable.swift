@@ -24,6 +24,7 @@ import Observation
 ///     func main() -> any Coordinatable { MainTabCoordinator() }
 /// }
 /// ```
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol RootCoordinatable: Coordinatable where ViewType == RootCoordinatableView {
     /// The observable container that holds the current root destination.
@@ -33,6 +34,7 @@ public protocol RootCoordinatable: Coordinatable where ViewType == RootCoordinat
     var anyRoot: any AnyRoot { get }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension RootCoordinatable {
     var _dataId: ObjectIdentifier {
@@ -71,6 +73,7 @@ public extension RootCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension RootCoordinatable {
     /// Switches the root destination.
@@ -127,6 +130,7 @@ public extension RootCoordinatable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 public extension RootCoordinatable {
     func setPresentedAs(_ type: PresentationType) {
@@ -142,6 +146,7 @@ public extension RootCoordinatable {
 ///
 /// You never create this view directly — call ``Coordinatable/view()``
 /// on a `RootCoordinatable` coordinator to obtain it.
+@available(iOS 17, macOS 14, *)
 public struct RootCoordinatableView: CoordinatableView {
     private let _coordinator: any RootCoordinatable
 

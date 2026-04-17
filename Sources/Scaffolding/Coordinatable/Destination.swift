@@ -14,11 +14,13 @@ import SwiftUI
 /// alongside the `Destinations` enum. You can use meta values with
 /// methods like ``FlowCoordinatable/popToFirst(_:)`` or
 /// ``TabCoordinatable/selectFirstTab(_:)`` to navigate by case name.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public protocol DestinationMeta: Equatable { }
 
 /// Describes how a destination is displayed within a coordinator's
 /// navigation hierarchy.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public enum DestinationType {
     /// The destination is the root of the coordinator.
@@ -55,6 +57,7 @@ public enum DestinationType {
 /// Pass a `PresentationType` to ``FlowCoordinatable/route(to:as:onDismiss:)``
 /// to control whether the destination is pushed, shown as a sheet, or
 /// displayed as a full-screen cover.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public enum PresentationType {
     /// Push the destination onto the navigation stack.
@@ -69,10 +72,12 @@ public enum PresentationType {
 
 // MARK: - Environment Key
 
+@available(iOS 17, macOS 14, *)
 private struct DestinationEnvironmentKey: @MainActor EnvironmentKey {
     @MainActor static let defaultValue: Destination = .dummy
 }
 
+@available(iOS 17, macOS 14, *)
 public extension EnvironmentValues {
     /// The ``Destination`` for the current view in the coordinator hierarchy.
     ///
@@ -92,6 +97,7 @@ public extension EnvironmentValues {
 /// `Destinations` enum produces them via its ``Destinationable/value(for:)``
 /// method. Coordinators consume destinations internally when pushing,
 /// presenting, or switching roots.
+@available(iOS 17, macOS 14, *)
 @MainActor
 public struct Destination: Identifiable {
     @MainActor
@@ -346,6 +352,7 @@ public struct Destination: Identifiable {
     }
 }
 
+@available(iOS 17, macOS 14, *)
 @MainActor
 extension Destination: @MainActor Equatable, @MainActor Hashable {
     public static func ==(lhs: Destination, rhs: Destination) -> Bool {

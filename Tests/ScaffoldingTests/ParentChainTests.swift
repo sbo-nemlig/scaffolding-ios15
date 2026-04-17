@@ -12,6 +12,7 @@ import SwiftUI
 @testable import Scaffolding
 
 /// Asserts that `child.parent` is the same object as `expectedParent`.
+@available(iOS 17, macOS 14, *)
 @MainActor
 private func expectParent(
     of child: any Coordinatable,
@@ -31,6 +32,7 @@ struct FlowStackSetupTests {
 
     @Test("Root coordinatable gets parent set during FlowStack.setup")
     func rootCoordinatableParentAfterSetup() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let parent = HomeFlowCoordinator()
         let stack = parent.anyStack
 
@@ -40,6 +42,7 @@ struct FlowStackSetupTests {
 
     @Test("Root coordinator child gets parent set during FlowStack.setup")
     func rootCoordinatorChildParentAfterSetup() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -50,6 +53,7 @@ struct FlowStackSetupTests {
 
     @Test("Root coordinator gets hasLayerNavigationCoordinatable = true")
     func rootCoordinatorHasLayerFlag() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -61,6 +65,7 @@ struct FlowStackSetupTests {
 
     @Test("setup is idempotent — second call does not reset parent")
     func setupIdempotency() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
         let firstRoot = flow.stack.root?.coordinatable
@@ -81,6 +86,7 @@ struct RootSetupTests {
 
     @Test("Root coordinatable gets parent set during Root.setup")
     func rootCoordinatableParentAfterSetup() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -91,6 +97,7 @@ struct RootSetupTests {
 
     @Test("Root coordinatable gets correct hasLayerNavigationCoordinator")
     func rootCoordinatableHasLayerFlag() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -101,6 +108,7 @@ struct RootSetupTests {
 
     @Test("Root.setup is idempotent")
     func setupIdempotency() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
         let firstRoot = app.root.root?.coordinatable
@@ -121,6 +129,7 @@ struct TabItemsSetupTests {
 
     @Test("All tab coordinatables get parent set during TabItems.setup")
     func allTabsGetParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -133,6 +142,7 @@ struct TabItemsSetupTests {
 
     @Test("Tab coordinatables inherit hasLayerNavigationCoordinatable from parent")
     func tabsInheritLayerFlag() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -144,6 +154,7 @@ struct TabItemsSetupTests {
 
     @Test("Tab coordinatables inherit hasLayerNavigationCoordinatable when parent has it true")
     func tabsInheritLayerFlagTrue() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         tab.setHasLayerNavigationCoordinatable(true)
         _ = tab.anyTabItems
@@ -156,6 +167,7 @@ struct TabItemsSetupTests {
 
     @Test("Default tab selection is first tab")
     func defaultSelectionIsFirst() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -171,6 +183,7 @@ struct DeepHierarchyTests {
 
     @Test("App → Tab → Flow: 3-level chain is fully connected")
     func threeLevelChain() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -192,6 +205,7 @@ struct DeepHierarchyTests {
 
     @Test("App → Tab → Flow → pushed Flow: 4 levels via route()")
     func fourLevelChainViaRoute() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -217,6 +231,7 @@ struct DeepHierarchyTests {
 
     @Test("App → Tab → Flow → Flow → Flow: 5-level deep push chain (PR #2 regression)")
     func fiveLevelDeepChain() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -245,6 +260,7 @@ struct DeepHierarchyTests {
 
     @Test("FlowStack root coordinator is reachable from its pushed children (PR #2 exact scenario)")
     func flowStackRootCoordinatorReachableFromPushed() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -264,6 +280,7 @@ struct DeepHierarchyTests {
 
     @Test("Root → Root → Flow: nested RootCoordinatables preserve chain")
     func nestedRootCoordinators() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let outer = OuterRootCoordinator()
         _ = outer.anyRoot
 
@@ -291,6 +308,7 @@ struct NavigationActionTests {
 
     @Test("route(to:) sets parent on pushed coordinator destination")
     func routeSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -303,6 +321,7 @@ struct NavigationActionTests {
 
     @Test("route(to:as:.sheet) sets parent on modal coordinator destination")
     func routeAsSheetSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -315,6 +334,7 @@ struct NavigationActionTests {
 
     @Test("route(to:as:.sheet) sets hasLayerNavigationCoordinatable = false on modal")
     func sheetDoesNotHaveLayerNavigation() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -328,6 +348,7 @@ struct NavigationActionTests {
 
     @Test("route(to:as:.push) sets hasLayerNavigationCoordinatable = true")
     func pushHasLayerNavigation() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -341,6 +362,7 @@ struct NavigationActionTests {
 
     @Test("FlowCoordinatable.setRoot sets parent on new root coordinator")
     func flowSetRootSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -356,6 +378,7 @@ struct NavigationActionTests {
 
     @Test("RootCoordinatable.setRoot sets parent on new root coordinator")
     func rootCoordinatableSetRootSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -368,6 +391,7 @@ struct NavigationActionTests {
 
     @Test("Multiple route() calls all set correct parent")
     func multipleRouteCallsSetParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -386,6 +410,7 @@ struct NavigationActionTests {
 
     @Test("pop() does not break remaining destinations' parent chain")
     func popPreservesParentChain() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -403,6 +428,7 @@ struct NavigationActionTests {
 
     @Test("popToRoot() does not break root parent chain")
     func popToRootPreservesRootParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -424,6 +450,7 @@ struct TabOperationTests {
 
     @Test("setTabs sets parent on all new tab coordinators")
     func setTabsSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -438,6 +465,7 @@ struct TabOperationTests {
 
     @Test("appendTab sets parent on appended coordinator")
     func appendTabSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -453,6 +481,7 @@ struct TabOperationTests {
 
     @Test("insertTab sets parent on inserted coordinator")
     func insertTabSetsParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -465,6 +494,7 @@ struct TabOperationTests {
 
     @Test("removeFirstTab does not break remaining tabs' parent chain")
     func removeTabPreservesOthers() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -484,6 +514,7 @@ struct DismissCoordinatorTests {
 
     @Test("dismissCoordinator removes pushed coordinator from parent's stack")
     func dismissPushedCoordinator() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -499,6 +530,7 @@ struct DismissCoordinatorTests {
 
     @Test("dismissCoordinator on pushed leaf removes it from parent")
     func dismissPushedLeaf() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let parentFlow = FlowWithCoordinatorRootCoordinator()
         _ = parentFlow.anyStack
 
@@ -513,6 +545,7 @@ struct DismissCoordinatorTests {
 
     @Test("dismissCoordinator on tab child logs warning and does nothing")
     func dismissTabChildIsNoOp() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -527,6 +560,7 @@ struct DismissCoordinatorTests {
 
     @Test("dismissCoordinator on RootCoordinatable child does not crash")
     func dismissRootChildDoesNotCrash() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -547,6 +581,7 @@ struct LayerNavigationTests {
 
     @Test("FlowStack root always gets hasLayer = true")
     func flowStackRootAlwaysTrue() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -556,6 +591,7 @@ struct LayerNavigationTests {
 
     @Test("FlowStack.setRoot preserves hasLayer = true on new root")
     func setRootPreservesHasLayer() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -567,6 +603,7 @@ struct LayerNavigationTests {
 
     @Test("Push-presented coordinator gets hasLayer = true")
     func pushGetsHasLayerTrue() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
         home.route(to: .detail, as: .push)
@@ -577,6 +614,7 @@ struct LayerNavigationTests {
 
     @Test("Sheet-presented coordinator gets hasLayer = false")
     func sheetGetsHasLayerFalse() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
         home.route(to: .sheetFlow, as: .sheet)
@@ -587,6 +625,7 @@ struct LayerNavigationTests {
 
     @Test("FullScreenCover-presented coordinator gets hasLayer = false")
     func fullScreenCoverGetsHasLayerFalse() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
         home.route(to: .sheetFlow, as: .fullScreenCover)
@@ -597,6 +636,7 @@ struct LayerNavigationTests {
 
     @Test("Tabs inherit hasLayer from TabCoordinator")
     func tabsInheritFromParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         tab.setHasLayerNavigationCoordinatable(true)
         _ = tab.anyTabItems
@@ -608,6 +648,7 @@ struct LayerNavigationTests {
 
     @Test("Root.setup propagates hasLayerNavigationCoordinator to child")
     func rootPropagatesHasLayer() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         app.root.hasLayerNavigationCoordinator = true
         _ = app.anyRoot
@@ -625,6 +666,7 @@ struct PresentedAsTests {
 
     @Test("FlowStack.setup propagates presentedAs to root destination")
     func flowStackPropagatesPresentedAs() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = HomeFlowCoordinator()
         flow.stack.presentedAs = .sheet
         _ = flow.anyStack
@@ -635,6 +677,7 @@ struct PresentedAsTests {
 
     @Test("Root.setup propagates presentedAs to root destination")
     func rootPropagatesPresentedAs() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         app.root.presentedAs = .sheet
         _ = app.anyRoot
@@ -644,6 +687,7 @@ struct PresentedAsTests {
 
     @Test("TabItems.setup propagates presentedAs to all tabs")
     func tabsPropagatesPresentedAs() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         tab.tabItems.presentedAs = .sheet
         _ = tab.anyTabItems
@@ -655,6 +699,7 @@ struct PresentedAsTests {
 
     @Test("setPresentedAs on FlowCoordinatable updates stack and existing root")
     func setPresentedAsUpdatesExisting() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = HomeFlowCoordinator()
         _ = flow.anyStack
 
@@ -677,6 +722,7 @@ struct EdgeCaseTests {
 
     @Test("Root.setRoot internal does not call setParent — public API must do it")
     func rootInternalSetRootReliesOnPublicAPI() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -690,6 +736,7 @@ struct EdgeCaseTests {
 
     @Test("Coordinator identity is stable across parent chain references")
     func coordinatorIdentityStable() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -704,6 +751,7 @@ struct EdgeCaseTests {
 
     @Test("Parent chain survives tab selection changes")
     func parentChainSurvivesTabSwitch() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -718,6 +766,7 @@ struct EdgeCaseTests {
 
     @Test("FlowStack with no coordinator root (view-only) does not crash on setup")
     func viewOnlyRootDoesNotCrash() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -728,6 +777,7 @@ struct EdgeCaseTests {
 
     @Test("environmentCoordinatable walks the full parent chain")
     func environmentCoordinatableWalksFullChain() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -752,6 +802,7 @@ struct EdgeCaseTests {
 
     @Test("isInStack works for pushed destinations")
     func isInStackWorks() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -766,6 +817,7 @@ struct EdgeCaseTests {
 
     @Test("popToFirst preserves parent on remaining destinations")
     func popToFirstPreservesParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -785,6 +837,7 @@ struct EdgeCaseTests {
 
     @Test("popToLast preserves parent on remaining destinations")
     func popToLastPreservesParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -805,6 +858,7 @@ struct EdgeCaseTests {
 
     @Test("isRoot returns correct value")
     func isRootWorks() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -818,6 +872,7 @@ struct EdgeCaseTests {
 
     @Test("Pop on empty stack triggers dismissCoordinator")
     func popOnEmptyStackDismisses() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let parent = HomeFlowCoordinator()
         _ = parent.anyStack
 
@@ -832,6 +887,7 @@ struct EdgeCaseTests {
 
     @Test("Route with value callback provides correct coordinator type")
     func routeWithValueCallback() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
@@ -846,6 +902,7 @@ struct EdgeCaseTests {
 
     @Test("FlowStack setRoot establishes parent and hasLayer on new root")
     func flowSetRootEstablishesParentAndLayer() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -862,6 +919,7 @@ struct EdgeCaseTests {
 
     @Test("Tab coordinator isInTabItems works correctly")
     func isInTabItemsWorks() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
@@ -882,6 +940,7 @@ struct PR2RegressionTests {
 
     @Test("FlowStack root coordinatable has non-nil parent after setup — the original bug")
     func flowStackRootHasParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -893,6 +952,7 @@ struct PR2RegressionTests {
 
     @Test("Root root coordinatable has non-nil parent after setup — the original bug")
     func rootRootHasParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -904,6 +964,7 @@ struct PR2RegressionTests {
 
     @Test("findAncestor traversal does NOT stop at FlowStack root boundary")
     func traversalDoesNotStopAtFlowStackRoot() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let app = AppRootCoordinator()
         _ = app.anyRoot
 
@@ -927,6 +988,7 @@ struct PR2RegressionTests {
 
     @Test("findAncestor traversal does NOT stop at Root root boundary")
     func traversalDoesNotStopAtRootBoundary() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let outer = OuterRootCoordinator()
         _ = outer.anyRoot
 
@@ -947,6 +1009,7 @@ struct PR2RegressionTests {
 
     @Test("FlowStack.setRoot also calls setParent on new root coordinator")
     func flowStackSetRootCallsSetParent() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let flow = FlowWithCoordinatorRootCoordinator()
         _ = flow.anyStack
 
@@ -960,6 +1023,7 @@ struct PR2RegressionTests {
 
     @Test("Consistent behavior: TabItems.setup matches FlowStack/Root")
     func consistentBehaviorAcrossContainerTypes() {
+        guard #available(iOS 17, macOS 14, *) else { return }
         let tab = MainTabCoordinator()
         _ = tab.anyTabItems
 
