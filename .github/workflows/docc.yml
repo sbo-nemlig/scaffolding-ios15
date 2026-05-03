@@ -34,15 +34,17 @@ jobs:
 
       - name: Build documentation
         run: |
-          swift package --allow-writing-to-directory ./docs \
+          mkdir -p ./docs/docc
+          swift package --allow-writing-to-directory ./docs/docc \
             generate-documentation \
             --target Scaffolding \
-            --output-path ./docs \
+            --output-path ./docs/docc \
             --transform-for-static-hosting \
-            --hosting-base-path scaffolding
+            --hosting-base-path scaffolding/docc
 
-      # No root redirect — the Svelte site owns `/scaffolding/`. DocC
-      # remains accessible at `/scaffolding/documentation/scaffolding/`.
+      # DocC lives at /scaffolding/docc/documentation/scaffolding/ so the
+      # Svelte site can own /scaffolding/ as its root. The web deploy is
+      # responsible for populating the rest of the Pages artifact.
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
