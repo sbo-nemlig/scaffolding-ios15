@@ -301,24 +301,24 @@ struct NavigationActionTests {
         expectParent(of: detail!, is: home)
     }
 
-    @Test("route(to:as:.sheet) sets parent on modal coordinator destination")
-    func routeAsSheetSetsParent() {
+    @Test("present(_:as:.sheet) sets parent on modal coordinator destination")
+    func presentAsSheetSetsParent() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
-        home.route(to: .sheetFlow, as: .sheet)
+        home.present(.sheetFlow, as: .sheet)
 
         let sheetCoord = home.stack.destinations.last?.coordinatable as? LeafFlowCoordinator
         #expect(sheetCoord != nil)
         expectParent(of: sheetCoord!, is: home)
     }
 
-    @Test("route(to:as:.sheet) sets hasLayerNavigationCoordinatable = false on modal")
+    @Test("present(_:as:.sheet) sets hasLayerNavigationCoordinatable = false on modal")
     func sheetDoesNotHaveLayerNavigation() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
-        home.route(to: .sheetFlow, as: .sheet)
+        home.present(.sheetFlow, as: .sheet)
 
         let sheetCoord = home.stack.destinations.last?.coordinatable
         #expect(sheetCoord != nil)
@@ -326,12 +326,12 @@ struct NavigationActionTests {
                 "Sheet-presented flows must NOT share parent NavigationStack layer")
     }
 
-    @Test("route(to:as:.push) sets hasLayerNavigationCoordinatable = true")
+    @Test("route(to:) sets hasLayerNavigationCoordinatable = true")
     func pushHasLayerNavigation() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
-        home.route(to: .detail, as: .push)
+        home.route(to: .detail)
 
         let detail = home.stack.destinations.last?.coordinatable
         #expect(detail != nil)
@@ -569,7 +569,7 @@ struct LayerNavigationTests {
     func pushGetsHasLayerTrue() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
-        home.route(to: .detail, as: .push)
+        home.route(to: .detail)
 
         let detail = home.stack.destinations.last?.coordinatable
         #expect(detail?.hasLayerNavigationCoordinatable == true)
@@ -579,7 +579,7 @@ struct LayerNavigationTests {
     func sheetGetsHasLayerFalse() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
-        home.route(to: .sheetFlow, as: .sheet)
+        home.present(.sheetFlow, as: .sheet)
 
         let sheetCoord = home.stack.destinations.last?.coordinatable
         #expect(sheetCoord?.hasLayerNavigationCoordinatable == false)
@@ -589,7 +589,7 @@ struct LayerNavigationTests {
     func fullScreenCoverGetsHasLayerFalse() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
-        home.route(to: .sheetFlow, as: .fullScreenCover)
+        home.present(.sheetFlow, as: .fullScreenCover)
 
         let coverCoord = home.stack.destinations.last?.coordinatable
         #expect(coverCoord?.hasLayerNavigationCoordinatable == false)
@@ -830,18 +830,16 @@ struct EdgeCaseTests {
                 "Pop on empty stack should dismiss (remove from parent)")
     }
 
-    @Test("Route with value callback provides correct coordinator type")
-    func routeWithValueCallback() {
+    @Test("Routed coordinator is reachable from the stack with correct parent")
+    func routedCoordinatorReachableFromStack() {
         let home = HomeFlowCoordinator()
         _ = home.anyStack
 
-        var capturedDetail: DetailFlowCoordinator?
-        home.route(to: .detail, value: { (coord: DetailFlowCoordinator) in
-            capturedDetail = coord
-        })
+        home.route(to: .detail)
 
-        #expect(capturedDetail != nil)
-        #expect(capturedDetail?.parent != nil)
+        let detail = home.stack.destinations.last?.coordinatable as? DetailFlowCoordinator
+        #expect(detail != nil)
+        #expect(detail?.parent != nil)
     }
 
     @Test("FlowStack setRoot establishes parent and hasLayer on new root")
@@ -976,5 +974,280 @@ struct PR2RegressionTests {
         #expect(tabChild?.parent != nil, "TabItems child must have parent")
         #expect(flowRoot?.parent != nil, "FlowStack root must have parent")
         #expect(rootChild?.parent != nil, "Root child must have parent")
+    }
+}
+
+// MARK: - route() / present() Split
+
+@MainActor
+@Suite("route() pushes only; present() handles modals")
+struct RoutePresentSplitTests {
+
+    // MARK: route() — push semantics
+
+    @Test("route(to:) pushes onto stack with pushType .push")
+    func routePushesOnly() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+
+        home.route(to: .detail)
+
+        let pushed = home.stack.destinations.last
+        #expect(pushed != nil)
+        #expect(pushed?.pushType == .push,
+                "route(to:) must always produce a .push destination")
+        #expect(pushed?.routeType == .push)
+    }
+
+    @Test("route(to:) does not append to any modal container")
+    func routeDoesNotPopulateModals() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+        home.route(to: .detail)
+
+        // FlowStack: pushed dest is in destinations but its pushType is .push,
+        // never .sheet/.fullScreenCover.
+        #expect(home.stack.destinations.allSatisfy { $0.pushType != .sheet && $0.pushType != .fullScreenCover })
+    }
+
+    // MARK: present() on FlowCoordinatable
+
+    @Test("present(_:as:.sheet) on Flow appends a sheet destination to its stack")
+    func flowPresentSheetGoesToStack() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+
+        home.present(.sheetFlow, as: .sheet)
+
+        let modal = home.stack.destinations.last
+        #expect(modal != nil)
+        #expect(modal?.pushType == .sheet)
+        #expect(modal?.routeType == .sheet)
+        let sheetCoord = modal?.coordinatable as? LeafFlowCoordinator
+        #expect(sheetCoord != nil)
+        expectParent(of: sheetCoord!, is: home)
+    }
+
+    @Test("present(_:as:.fullScreenCover) on Flow appends a cover destination")
+    func flowPresentFullScreenCoverGoesToStack() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+
+        home.present(.sheetFlow, as: .fullScreenCover)
+
+        let modal = home.stack.destinations.last
+        #expect(modal?.pushType == .fullScreenCover)
+        #expect(modal?.routeType == .fullScreenCover)
+    }
+
+    @Test("present() default is .sheet")
+    func presentDefaultIsSheet() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+
+        home.present(.sheetFlow)
+
+        #expect(home.stack.destinations.last?.pushType == .sheet)
+    }
+
+    @Test("present(onDismiss:) fires when modal is removed")
+    func presentOnDismissFires() {
+        let home = HomeFlowCoordinator()
+        _ = home.anyStack
+
+        var fired = 0
+        home.present(.sheetFlow, as: .sheet, onDismiss: { fired += 1 })
+
+        let modalId = home.stack.destinations.last!.id
+        home.removeModalDestination(withId: modalId, type: .sheet)
+
+        #expect(fired == 1, "onDismiss must fire exactly once on modal removal")
+        #expect(home.stack.destinations.isEmpty)
+    }
+
+    // MARK: present() on TabCoordinatable
+
+    @Test("present(_:as:.sheet) on Tab appends to tabItems.modals")
+    func tabPresentSheetGoesToContainerModals() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+
+        tab.present(.settings, as: .sheet)
+
+        #expect(tab.tabItems.modals.count == 1)
+        #expect(tab.tabItems.modals.first?.pushType == .sheet)
+        #expect(tab.tabItems.modals.first?.routeType == .sheet)
+
+        let presented = tab.tabItems.modals.first?.coordinatable as? SettingsFlowCoordinator
+        #expect(presented != nil)
+        expectParent(of: presented!, is: tab)
+    }
+
+    @Test("present() on Tab does not mutate tabs array")
+    func tabPresentDoesNotChangeTabs() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+        let originalCount = tab.tabItems.tabs.count
+
+        tab.present(.settings, as: .sheet)
+
+        #expect(tab.tabItems.tabs.count == originalCount,
+                "present() must not append to the visible tab list")
+    }
+
+    @Test("present(_:as:.fullScreenCover) on Tab is a separate slot from .sheet")
+    func tabPresentSheetAndFullScreenCoverCoexist() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+
+        tab.present(.settings, as: .sheet)
+        tab.present(.home, as: .fullScreenCover)
+
+        #expect(tab.tabItems.modals.count == 2)
+        #expect(tab.tabItems.modals.contains(where: { $0.pushType == .sheet }))
+        #expect(tab.tabItems.modals.contains(where: { $0.pushType == .fullScreenCover }))
+    }
+
+    @Test("dismissCoordinator on Tab modal child removes from tabItems.modals")
+    func dismissTabModalChildRemovesFromModals() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+
+        tab.present(.settings, as: .sheet)
+        let presented = tab.tabItems.modals.first?.coordinatable as? SettingsFlowCoordinator
+        #expect(presented != nil)
+
+        presented!.dismissCoordinator()
+
+        #expect(tab.tabItems.modals.isEmpty,
+                "Modal child must be removable via dismissCoordinator on Tab parent")
+    }
+
+    @Test("dismissCoordinator on Tab tab child still refused (only modals are dismissable)")
+    func tabTabChildStillNotDismissable() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+
+        let homeFlow = tab.tabItems.tabs.first?.coordinatable as? HomeFlowCoordinator
+        #expect(homeFlow != nil)
+
+        let countBefore = tab.tabItems.tabs.count
+        homeFlow!.dismissCoordinator()
+
+        #expect(tab.tabItems.tabs.count == countBefore,
+                "Plain tab child must remain non-dismissable")
+    }
+
+    @Test("Tab modal onDismiss fires once on dismissCoordinator")
+    func tabModalOnDismissFires() {
+        let tab = MainTabCoordinator()
+        _ = tab.anyTabItems
+
+        var fired = 0
+        tab.present(.settings, as: .sheet, onDismiss: { fired += 1 })
+
+        let presented = tab.tabItems.modals.first?.coordinatable as? SettingsFlowCoordinator
+        presented!.dismissCoordinator()
+
+        #expect(fired == 1)
+    }
+
+    // MARK: present() on RootCoordinatable
+
+    @Test("present(_:as:.sheet) on Root appends to root.modals")
+    func rootPresentSheetGoesToContainerModals() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        app.present(.login, as: .sheet)
+
+        #expect(app.root.modals.count == 1)
+        #expect(app.root.modals.first?.pushType == .sheet)
+
+        let presented = app.root.modals.first?.coordinatable as? LoginFlowCoordinator
+        #expect(presented != nil)
+        expectParent(of: presented!, is: app)
+    }
+
+    @Test("present() on Root does not change current root destination")
+    func rootPresentDoesNotChangeRoot() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+        let initialRoot = app.root.root?.coordinatable as? MainTabCoordinator
+        #expect(initialRoot != nil)
+
+        app.present(.login, as: .sheet)
+
+        let stillRoot = app.root.root?.coordinatable as? MainTabCoordinator
+        #expect(stillRoot === initialRoot,
+                "present() must not replace the root view")
+    }
+
+    @Test("dismissCoordinator on Root modal child removes from root.modals")
+    func dismissRootModalChildRemovesFromModals() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        app.present(.login, as: .sheet)
+        let presented = app.root.modals.first?.coordinatable as? LoginFlowCoordinator
+        #expect(presented != nil)
+
+        presented!.dismissCoordinator()
+
+        #expect(app.root.modals.isEmpty,
+                "Modal child must be removable via dismissCoordinator on Root parent")
+    }
+
+    @Test("Root modal onDismiss fires once on dismissCoordinator")
+    func rootModalOnDismissFires() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        var fired = 0
+        app.present(.login, as: .sheet, onDismiss: { fired += 1 })
+
+        let presented = app.root.modals.first?.coordinatable as? LoginFlowCoordinator
+        presented!.dismissCoordinator()
+
+        #expect(fired == 1)
+    }
+
+    @Test("dismissCoordinator on Root tab child (non-modal) is unchanged behavior")
+    func dismissNonModalRootChildUnchanged() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        let tabCoord = app.root.root?.coordinatable as? MainTabCoordinator
+        #expect(tabCoord != nil)
+
+        // Root child that is NOT in modals — falls through to existing behavior
+        // (calls parent.parent?.dismissCoordinator(); app has no parent → no-op).
+        // Must not crash and must not touch root.modals (empty here).
+        tabCoord!.dismissCoordinator()
+        #expect(app.root.modals.isEmpty)
+    }
+
+    // MARK: Cross-cutting
+
+    @Test("present() propagates presentedAs to a presented Flow coordinator")
+    func presentPropagatesPresentedAsToFlow() {
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        app.present(.login, as: .fullScreenCover)
+
+        let login = app.root.modals.first?.coordinatable as? LoginFlowCoordinator
+        #expect(login != nil)
+        #expect(login?.stack.presentedAs == .fullScreenCover,
+                "Flow coordinator presented modally inherits presentedAs")
+    }
+
+    @Test("ModalPresentationType maps to PresentationType correctly")
+    func modalPresentationTypeMapping() {
+        // Round-trip the public enum through DestinationType.
+        let sheetDest = DestinationType.from(presentationType: ModalPresentationType.sheet.presentationType)
+        let coverDest = DestinationType.from(presentationType: ModalPresentationType.fullScreenCover.presentationType)
+        #expect(sheetDest == .sheet)
+        #expect(coverDest == .fullScreenCover)
     }
 }

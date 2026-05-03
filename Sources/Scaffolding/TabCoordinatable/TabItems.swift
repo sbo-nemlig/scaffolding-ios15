@@ -20,6 +20,8 @@ public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: Tab
     var tabBarVisibility: Visibility { get set }
     /// The presentation type if this tab coordinator was presented modally.
     var presentedAs: PresentationType? { get set }
+    /// Modal destinations presented from this coordinator.
+    var modals: [Destination] { get set }
 }
 
 /// Observable state container for a ``TabCoordinatable`` coordinator.
@@ -42,6 +44,8 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
     public var hasLayerNavigationCoordinator: Bool = false
     /// The presentation type when this coordinator was presented modally.
     public var presentedAs: PresentationType?
+    /// Modal destinations presented from this coordinator.
+    public var modals: [Destination] = []
 
     /// The resolved tab destinations.
     public var tabs: [Destination] = .init()
@@ -302,4 +306,5 @@ extension TabItems {
             }
         }
     }
+
 }

@@ -44,7 +44,7 @@
             Define a ``FlowCoordinatable`` coordinator that manages navigation
             between three screens: **Home**, **Detail**, and **Settings**.
 
-            The ``Scaffoldable()`` macro inspects the functions you write and
+            The ``Scaffoldable(injectsCoordinator:)`` macro inspects the functions you write and
             generates a type-safe `Destinations` enum at compile time. Each
             function becomes a destination — no manual enums needed.
         }
@@ -184,8 +184,9 @@
 
             @Step {
                 Add a toolbar button to **HomeView** that presents settings as
-                a sheet. Pass `as: .sheet` to `route(to:)`. You can also use
-                `.fullScreenCover` for a full-screen modal.
+                a sheet. Call `present(_:as:)` instead of `route(to:)` —
+                `route` is push-only, while `present` handles `.sheet` and
+                `.fullScreenCover`.
 
                 @Code(name: "HomeView.swift", file: "05-home-view-sheet.swift")
             }
@@ -195,14 +196,14 @@
     @Section(title: "Wire Up the App") {
         @ContentAndMedia {
             Connect the coordinator to the app entry point and run your project.
-            Call `coordinator.view()` to render the coordinator's navigation
+            Access `coordinator.view` to render the coordinator's navigation
             hierarchy as a SwiftUI view.
         }
 
         @Steps {
             @Step {
                 Update **ScaffoldingDemoApp.swift** to create an `AppCoordinator`
-                instance and call `coordinator.view()` inside the `WindowGroup`.
+                instance and reference `coordinator.view` inside the `WindowGroup`.
 
                 @Code(name: "ScaffoldingDemoApp.swift", file: "06-app-final.swift")
             }

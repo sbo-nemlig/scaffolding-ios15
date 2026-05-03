@@ -7,7 +7,7 @@ struct ScaffoldingDemoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            coordinator.view()
+            coordinator.view
         }
     }
 }

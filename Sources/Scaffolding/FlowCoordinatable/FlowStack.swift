@@ -104,11 +104,16 @@ extension FlowStack {
             coordinator?.dismissCoordinator()
             return
         }
-        destinations.removeLast()
+        let removed = destinations.removeLast()
+        removed.resolveDismissal()
     }
 
     func popToRoot() {
+        let removed = destinations
         destinations.removeAll()
+        for destination in removed {
+            destination.resolveDismissal()
+        }
     }
 
     func popToFirst(_ destination: Coordinator.Destinations.Meta) -> Destination? {
@@ -130,7 +135,11 @@ extension FlowStack {
 
         let newCount = firstIndex + 1
         if destinations.count > newCount {
+            let removed = destinations[newCount...]
             destinations.removeSubrange(newCount...)
+            for destination in removed {
+                destination.resolveDismissal()
+            }
         }
 
         return targetDestination
@@ -155,7 +164,11 @@ extension FlowStack {
 
         let newCount = lastIndex + 1
         if destinations.count > newCount {
+            let removed = destinations[newCount...]
             destinations.removeSubrange(newCount...)
+            for destination in removed {
+                destination.resolveDismissal()
+            }
         }
 
         return targetDestination
@@ -168,7 +181,16 @@ extension FlowStack {
              // invalid once the root changes. Clearing them first ensures
              // the NavigationStack path is empty before the root view
              // switches, preventing a stale navigation bar.
+             let removedDestinations = destinations
              destinations.removeAll()
+
+             // Pushed destinations and the previous root were torn down
+             // because the parent's state changed underneath them — that
+             // is a cancellation, not a user-initiated dismissal.
+             for destination in removedDestinations {
+                 destination.resolveDismissal()
+             }
+             self.root?.resolveDismissal()
 
              var mutableRoot = root
              mutableRoot.coordinatable?.setHasLayerNavigationCoordinatable(true)

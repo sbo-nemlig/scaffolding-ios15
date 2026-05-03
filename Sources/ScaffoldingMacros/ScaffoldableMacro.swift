@@ -12,6 +12,7 @@ import SwiftDiagnostics
 import Foundation
 
 public struct ScaffoldableMacro: MemberMacro {
+
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -21,23 +22,46 @@ public struct ScaffoldableMacro: MemberMacro {
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
             throw ScaffoldingMacroError.onlyApplicableToClass
         }
-        
+
         let className = classDecl.name.text
         let coordinatableType = try determineCoordinatableType(from: classDecl)
         let isPublic = classDecl.modifiers.contains { modifier in
             modifier.name.text == "public"
         }
-        
+        let injectsCoordinator = parseInjectsCoordinator(from: node)
+
         let functions = extractFunctions(from: classDecl)
         let trackedFunctions = try filterTrackedFunctions(functions, coordinatableType: coordinatableType, context: context)
-        
+
         let destinationsEnum = try generateDestinationsEnum(
             className: className,
             functions: trackedFunctions,
             isPublic: isPublic
         )
-        
-        return [DeclSyntax(destinationsEnum)]
+
+        var members: [DeclSyntax] = [DeclSyntax(destinationsEnum)]
+
+        // Emit the env-injection opt-out flag when explicitly disabled.
+        // The default true value is provided by Coordinatable's protocol
+        // extension; only the opt-out needs to be materialised.
+        if injectsCoordinator == false {
+            members.append(DeclSyntax(stringLiteral: """
+                \(isPublic ? "public " : "")nonisolated var _injectsCoordinator: Bool { false }
+                """))
+        }
+
+        return members
+    }
+
+    private static func parseInjectsCoordinator(from node: AttributeSyntax) -> Bool? {
+        guard case let .argumentList(arguments) = node.arguments else { return nil }
+        for argument in arguments {
+            guard let label = argument.label?.text, label == "injectsCoordinator" else { continue }
+            let valueText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            if valueText == "true" { return true }
+            if valueText == "false" { return false }
+        }
+        return nil
     }
     
     
@@ -133,14 +157,27 @@ public struct ScaffoldableMacro: MemberMacro {
         guard let type = type else {
             return .void
         }
-        
+
         let typeString = type.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         // Simple types
         if typeString.hasPrefix("some View") || typeString == "some View" {
             return .someView
         } else if typeString.hasPrefix("any Coordinatable") || typeString == "any Coordinatable" {
             return .anyCoordinatable
+        }
+
+        // A bare identifier (no whitespace, not a tuple) is treated as a
+        // concrete coordinator type. Consumers should use `some View` for
+        // view returns; a concrete view type would be misclassified here,
+        // which is by design — if you want type-safe return, return your
+        // concrete coordinator.
+        if !typeString.contains("(") &&
+           !typeString.contains(" ") &&
+           !typeString.contains("<") &&
+           !typeString.isEmpty &&
+           typeString.first?.isLetter == true {
+            return .concreteCoordinatable(typeName: typeString)
         }
         
         // Check for TabRole variants first (more specific patterns)
@@ -193,7 +230,7 @@ public struct ScaffoldableMacro: MemberMacro {
     
     private static func shouldAutoTrackFunction(returnType: ReturnTypeInfo) -> Bool {
         switch returnType {
-        case .someView, .anyCoordinatable,
+        case .someView, .anyCoordinatable, .concreteCoordinatable,
              .coordinatableViewTuple, .viewViewTuple,
              .viewTabRoleTuple, .coordinatableTabRoleTuple,
              .viewViewTabRoleTuple, .coordinatableViewTabRoleTuple:
@@ -481,7 +518,7 @@ public struct ScaffoldableMacro: MemberMacro {
         switch function.returnType {
         case .someView:
             return ".init(\(functionCall), meta: meta, parent: instance)"
-        case .anyCoordinatable:
+        case .anyCoordinatable, .concreteCoordinatable:
             return ".init({ [unowned instance] in \(functionCall) }, meta: meta, parent: instance)"
         case .coordinatableViewTuple:
             return ".init({ [unowned instance] in \(functionCall) }, meta: meta, parent: instance)"
@@ -511,6 +548,7 @@ enum ReturnTypeInfo {
     case void
     case someView
     case anyCoordinatable
+    case concreteCoordinatable(typeName: String)
     case coordinatableViewTuple      // (any Coordinatable, some View)
     case viewViewTuple               // (some View, some View)
     case viewTabRoleTuple            // (some View, TabRole)

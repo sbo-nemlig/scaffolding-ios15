@@ -40,7 +40,7 @@ final class DummyCoordinatable: @MainActor Coordinatable {
     var parent: (any Coordinatable)?
     var hasLayerNavigationCoordinatable: Bool = false
     
-    func view() -> some View {
+    var view: some View {
         EmptyView()
     }
     

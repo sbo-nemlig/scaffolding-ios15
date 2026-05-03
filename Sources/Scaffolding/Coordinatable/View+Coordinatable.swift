@@ -8,37 +8,92 @@
 import SwiftUI
 
 @MainActor
+extension View {
+    /// Applies a sheet + full-screen cover to a host coordinator that
+    /// stores its modals in an array. Dismissal removes the matching
+    /// destination and resolves its lifecycle callback.
+    func applyContainerModals<ModalContent: View>(
+        sheets sheetDestinations: [Destination],
+        fullScreenCovers coverDestinations: [Destination],
+        onDismissSheet: @escaping (UUID) -> Void,
+        onDismissFullScreenCover: @escaping (UUID) -> Void,
+        modalContent: @escaping (Destination) -> ModalContent
+    ) -> some View {
+        let withSheet = self.sheet(
+            item: Binding<Destination?>(
+                get: { sheetDestinations.first },
+                set: { newValue in
+                    if newValue == nil, let current = sheetDestinations.first {
+                        onDismissSheet(current.id)
+                    }
+                }
+            )
+        ) { destination in
+            modalContent(destination)
+                .id(destination.id)
+        }
+
+#if os(macOS)
+        return withSheet
+#else
+        return withSheet.fullScreenCover(
+            item: Binding<Destination?>(
+                get: { coverDestinations.first },
+                set: { newValue in
+                    if newValue == nil, let current = coverDestinations.first {
+                        onDismissFullScreenCover(current.id)
+                    }
+                }
+            )
+        ) { destination in
+            modalContent(destination)
+                .id(destination.id)
+        }
+#endif
+    }
+}
+
+@MainActor
 public extension View {
     func environmentCoordinatable(_ object: Any) -> AnyView {
         let mirror = Mirror(reflecting: object)
-        
+
         guard mirror.displayStyle == .class else {
             return AnyView(self)
         }
-        
+
         let observableObject = object as AnyObject
-        
+
         if let observable = observableObject as? (any AnyObject & Observable) {
-            var coordinators: [any AnyObject & Observable] = [observable]
-            
+            var coordinators: [any AnyObject & Observable] = []
+
+            // Self injects only if it opts in. Coordinators that opt out
+            // are still walked for their parents — opt-out hides only
+            // the coordinator itself from descendant environments.
             if let coordinatable = observable as? any Coordinatable {
+                if coordinatable._injectsCoordinator {
+                    coordinators.append(observable)
+                }
                 var currentParent = coordinatable.parent
                 while let parent = currentParent {
-                    if let parentObservable = parent as? (any AnyObject & Observable) {
+                    if let parentObservable = parent as? (any AnyObject & Observable),
+                       parent._injectsCoordinator {
                         coordinators.append(parentObservable)
                     }
                     currentParent = parent.parent
                 }
+            } else {
+                coordinators.append(observable)
             }
-            
+
             var result: any View = self
             for coordinator in coordinators {
                 result = result.environment(coordinator)
             }
-            
+
             return AnyView(result)
         }
-        
+
         return AnyView(self)
     }
 }

@@ -14,7 +14,7 @@ import os.log
 ///
 /// Conform to `FlowCoordinatable` to build stack-based navigation flows.
 /// Provide a ``FlowStack`` property and define route functions — the
-/// ``Scaffoldable()`` macro generates the `Destinations` enum for you.
+/// ``Scaffoldable(injectsCoordinator:)`` macro generates the `Destinations` enum for you.
 ///
 /// ```swift
 /// @Scaffoldable @Observable
@@ -26,7 +26,8 @@ import os.log
 /// }
 /// ```
 ///
-/// Navigate with ``route(to:as:onDismiss:)`` and ``pop()``.
+/// Navigate with ``route(to:onDismiss:)``,
+/// ``FlowCoordinatable/present(_:as:onDismiss:)``, and ``pop()``.
 @MainActor
 public protocol FlowCoordinatable: Coordinatable where ViewType == FlowCoordinatableView {
     /// The observable navigation stack that holds this coordinator's state.
@@ -47,7 +48,7 @@ public extension FlowCoordinatable {
         return stack
     }
 
-    func view() -> FlowCoordinatableView {
+    var view: FlowCoordinatableView {
         stack.setup(for: self)
         return .init(coordinator: self)
     }
@@ -126,7 +127,11 @@ extension FlowCoordinatable {
             }
         }
 
+        let toRemove = anyStack.destinations.filter { $0.id == id && $0.pushType == type }
         anyStack.destinations.removeAll { $0.id == id && $0.pushType == type }
+        for destination in toRemove {
+            destination.resolveDismissal()
+        }
 
         for destination in anyStack.destinations where destination.pushType == .push {
             traverseCoordinatable(destination.coordinatable) { nestedFlow in
@@ -328,67 +333,42 @@ public extension FlowCoordinatable {
         return self
     }
 
-    /// Replaces the root destination and passes the resolved coordinator
-    /// or view to a callback.
+    /// Pushes a destination onto the navigation stack.
+    ///
+    /// `route(to:)` is a push-only operation — to present a destination
+    /// modally, use ``FlowCoordinatable/present(_:as:onDismiss:)`` instead.
     ///
     /// - Parameters:
-    ///   - destination: The new root destination.
-    ///   - animation: An optional animation override.
-    ///   - value: A closure that receives the resolved destination,
-    ///     cast to `T`.
-    /// - Returns: `self` for chaining.
-    @discardableResult
-    func setRoot<T>(
-        _ destination: Destinations,
-        animation: Animation? = nil,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let dest = destination.value(for: self)
-        dest.coordinatable?.setParent(self)
-        stack.setRoot(root: dest, animation: animation)
-        castAndExecute(from: dest, action: value)
-        return self
-    }
-
-    /// Navigates to a destination by pushing it onto the stack, or
-    /// presenting it as a sheet or full-screen cover.
-    ///
-    /// - Parameters:
-    ///   - destination: The destination to navigate to.
-    ///   - pushType: How the destination should be presented.
-    ///     Defaults to `.push`.
-    ///   - onDismiss: A closure invoked when a modal destination is
-    ///     dismissed.
+    ///   - destination: The destination to push.
+    ///   - onDismiss: A closure invoked when the pushed destination is
+    ///     popped or otherwise removed from the stack.
     /// - Returns: `self` for chaining.
     @discardableResult
     func route(
         to destination: Destinations,
-        as pushType: PresentationType = .push,
-        onDismiss: @escaping () -> Void = { }
+        onDismiss: @escaping @MainActor () -> Void = { }
     ) -> Self {
-        performRoute(to: destination, as: pushType, onDismiss: onDismiss)
+        performRoute(to: destination, as: .push, onDismiss: onDismiss)
         return self
     }
 
-    /// Navigates to a destination and passes the resolved coordinator or
-    /// view to a callback.
+    /// Presents a destination modally on this flow coordinator.
+    ///
+    /// The modal lives on this coordinator's stack and is rendered as a
+    /// sheet or full-screen cover by the flow's view layer.
     ///
     /// - Parameters:
-    ///   - destination: The destination to navigate to.
-    ///   - pushType: How the destination should be presented.
-    ///   - onDismiss: A closure invoked when a modal is dismissed.
-    ///   - value: A closure that receives the resolved destination,
-    ///     cast to `T`.
+    ///   - destination: The destination to present.
+    ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - onDismiss: A closure invoked when the modal is dismissed.
     /// - Returns: `self` for chaining.
     @discardableResult
-    func route<T>(
-        to destination: Destinations,
-        as pushType: PresentationType = .push,
-        onDismiss: @escaping () -> Void = { },
-        value: @escaping (T) -> Void
+    func present(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        onDismiss: @escaping @MainActor () -> Void = { }
     ) -> Self {
-        let dest = performRoute(to: destination, as: pushType, onDismiss: onDismiss)
-        castAndExecute(from: dest, action: value)
+        performRoute(to: destination, as: type.presentationType, onDismiss: onDismiss)
         return self
     }
 
@@ -424,18 +404,6 @@ public extension FlowCoordinatable {
         return self
     }
 
-    /// Pops the stack back to the **first** occurrence of the given
-    /// destination and passes it to a callback.
-    @discardableResult
-    func popToFirst<T>(
-        _ destination: Destinations.Meta,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        guard let dest = stack.popToFirst(destination) else { return self }
-        castAndExecute(from: dest, action: value)
-        return self
-    }
-
     /// Pops the stack back to the **last** occurrence of the given
     /// destination.
     ///
@@ -447,22 +415,81 @@ public extension FlowCoordinatable {
         return self
     }
 
-    /// Pops the stack back to the **last** occurrence of the given
-    /// destination and passes it to a callback.
-    @discardableResult
-    func popToLast<T>(
-        _ destination: Destinations.Meta,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        guard let dest = stack.popToLast(destination) else { return self }
-        castAndExecute(from: dest, action: value)
-        return self
-    }
-
     /// Returns whether the given destination is currently in the
     /// navigation stack.
     func isInStack(_ destination: Destinations.Meta) -> Bool {
-        stack.destinations.contains { $0.meta as! Self.Destinations.Meta == destination }
+        stack.destinations.contains { dest in
+            guard let destMeta = dest.meta as? Self.Destinations.Meta else { return false }
+            return destMeta == destination
+        }
+    }
+}
+
+@MainActor
+public extension FlowCoordinatable {
+    /// Pushes a destination and invokes a typed callback with the resolved
+    /// child coordinator.
+    ///
+    /// The callback fires once after the destination is pushed, receiving
+    /// the newly created coordinator cast to `T`. If the destination does
+    /// not resolve to a coordinator of type `T`, the callback is not
+    /// invoked.
+    @discardableResult
+    func route<T: Coordinatable>(
+        to destination: Destinations,
+        onDismiss: @escaping @MainActor () -> Void = { },
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        let dest = performRoute(to: destination, as: .push, onDismiss: onDismiss)
+        if let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Replaces the root and invokes a typed callback with the resolved
+    /// child coordinator.
+    @discardableResult
+    func setRoot<T: Coordinatable>(
+        _ destination: Destinations,
+        animation: Animation? = nil,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        let dest = destination.value(for: self)
+        dest.coordinatable?.setParent(self)
+        stack.setRoot(root: dest, animation: animation)
+        if let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Pops to the **first** matching destination and invokes a typed
+    /// callback with the destination's coordinator, if any.
+    @discardableResult
+    func popToFirst<T: Coordinatable>(
+        _ destination: Destinations.Meta,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = stack.popToFirst(destination),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Pops to the **last** matching destination and invokes a typed
+    /// callback with the destination's coordinator, if any.
+    @discardableResult
+    func popToLast<T: Coordinatable>(
+        _ destination: Destinations.Meta,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = stack.popToLast(destination),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
     }
 }
 
@@ -472,7 +499,7 @@ private extension FlowCoordinatable {
     func performRoute(
         to destination: Destinations,
         as pushType: PresentationType,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping @MainActor () -> Void
     ) -> Destination {
         var dest = destination.value(for: self)
 
@@ -491,16 +518,6 @@ private extension FlowCoordinatable {
         checkForMultipleModals(pushType: pushType)
         return dest
     }
-
-    func castAndExecute<T>(from dest: Destination, action: @escaping (T) -> Void) {
-        if let coordinatable = dest.coordinatable as? T {
-            action(coordinatable)
-        } else if let view = dest.view as? T {
-            action(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-    }
 }
 
 @MainActor
@@ -516,7 +533,7 @@ extension FlowCoordinatable {
 
 /// The SwiftUI view generated by a ``FlowCoordinatable`` coordinator.
 ///
-/// You never create this view directly — call ``Coordinatable/view()``
+/// You never create this view directly — access ``Coordinatable/view``
 /// on a `FlowCoordinatable` coordinator to obtain it.
 public struct FlowCoordinatableView: CoordinatableView {
     private let _coordinator: any FlowCoordinatable
@@ -534,7 +551,7 @@ public struct FlowCoordinatableView: CoordinatableView {
         if let rootView = _coordinator.anyStack.root?.view {
             flowCoordinatableView(view: AnyView(rootView))
         } else if let c = _coordinator.anyStack.root?.coordinatable {
-            flowCoordinatableView(view: AnyView(c.view()))
+            flowCoordinatableView(view: AnyView(c.view))
         } else {
             EmptyView()
         }
@@ -561,7 +578,7 @@ public struct FlowCoordinatableView: CoordinatableView {
                         if let rootView = _coordinator.anyStack.root?.view {
                             AnyView(rootView)
                         } else if let c = _coordinator.anyStack.root?.coordinatable {
-                            AnyView(c.view())
+                            AnyView(c.view)
                                 .environmentCoordinatable(c)
                         } else {
                             EmptyView()

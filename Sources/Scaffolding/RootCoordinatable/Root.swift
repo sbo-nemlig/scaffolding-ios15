@@ -18,6 +18,8 @@ public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoo
     var animation: Animation? { get set }
     /// The presentation type if this root coordinator was presented modally.
     var presentedAs: PresentationType? { get set }
+    /// Modal destinations presented from this coordinator.
+    var modals: [Destination] { get set }
 }
 
 /// Observable state container for a ``RootCoordinatable`` coordinator.
@@ -42,7 +44,9 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     public var animation: Animation? = .default
     /// The presentation type when this coordinator was presented modally.
     public var presentedAs: PresentationType?
-    
+    /// Modal destinations presented from this coordinator.
+    public var modals: [Destination] = []
+
     /// Whether ``setup(for:)`` has been called.
     public var isSetup: Bool = false
     private var initialRoot: Coordinator.Destinations?

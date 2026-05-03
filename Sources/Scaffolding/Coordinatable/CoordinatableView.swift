@@ -30,7 +30,7 @@ public extension CoordinatableView {
             if let view = destination.view {
                 AnyView(view.environmentCoordinatable(destination.parent))
             } else if let c = destination.coordinatable {
-                AnyView(c.view())
+                AnyView(c.view)
             } else {
                 AnyView(EmptyView())
             }

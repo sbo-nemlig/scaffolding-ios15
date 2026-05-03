@@ -4,9 +4,9 @@
 
 **Macro-powered SwiftUI navigation that stays out of your way.**
 
-[![Swift 5.9+](https://img.shields.io/badge/Swift-5.9+-F05138.svg?style=flat&logo=swift)](https://swift.org)
-[![iOS 17+](https://img.shields.io/badge/iOS-17%2B-007AFF.svg?style=flat&logo=apple)](https://developer.apple.com/ios/)
-[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000.svg?style=flat&logo=apple)](https://developer.apple.com/macos/)
+[![Swift 6.2+](https://img.shields.io/badge/Swift-6.2+-F05138.svg?style=flat&logo=swift)](https://swift.org)
+[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-007AFF.svg?style=flat&logo=apple)](https://developer.apple.com/ios/)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000.svg?style=flat&logo=apple)](https://developer.apple.com/macos/)
 [![Swift Package Manager](https://img.shields.io/badge/SPM-compatible-brightgreen.svg?style=flat)](https://swift.org/package-manager/)
 
 Define routes as functions. Get type-safe navigation for free.
@@ -31,8 +31,8 @@ final class HomeCoordinator: @MainActor FlowCoordinatable {
 That's it. The `@Scaffoldable` macro generates a `Destinations` enum from your methods. No manual enums, no switch statements, no boilerplate.
 
 ```swift
-coordinator.route(to: .detail(item: selectedItem))
-coordinator.route(to: .settings, as: .sheet)
+coordinator.route(to: .detail(item: selectedItem))   // push
+coordinator.present(.settings, as: .sheet)           // sheet (sub-flow)
 coordinator.pop()
 ```
 
@@ -50,6 +50,23 @@ coordinator.pop()
 
 If your app has a couple of screens, `NavigationLink` is fine. Once you have multiple flows, deep linking, or modular architecture — Scaffolding keeps things clean.
 
+### When to use what
+
+Scaffolding exists to give `NavigationStack` the **modularity** it lacks — coordinators, child coordinators, and `route(to:)` that compose across module boundaries. That's the core value.
+
+For modals, pick the lightest tool that fits:
+
+- **SwiftUI's native `.sheet(item:)` / `.fullScreenCover(item:)`** when the modal is a *single view* — a confirmation, an info dialog, a simple form. Keep it native; the view-side modifier is simpler and avoids coordinator overhead.
+- **Scaffolding's `present(_:as:)`** when the modal is a *sub-flow* — a Login flow with email → password → done, a Settings hierarchy, anything with its own navigation. The presented coordinator gets a parent reference, can call `dismissCoordinator()` on itself, and delivers results back via `onComplete` callbacks.
+
+Rule of thumb: **if the modal contains navigation, make it a coordinator and `present`. If it's a single-page view, use SwiftUI's native modifier.**
+
+> ⚠ **Don't nest `NavigationStack` inside a flow.**
+>
+> `FlowCoordinatable` *is* the `NavigationStack`, so putting another one inside any of its destination views breaks navigation — SwiftUI doesn't compose `NavigationStack`s with each other, and the nested stack swallows the pushes that should belong to the parent flow.
+>
+> If a screen needs its own navigation hierarchy, route to a child `FlowCoordinatable` instead, or `present(_:as:)` a sub-flow modally. Each coordinator boundary creates a fresh `NavigationStack`, which is the only configuration SwiftUI handles correctly.
+
 ---
 
 ## Installation
@@ -60,7 +77,7 @@ Add Scaffolding via Swift Package Manager:
 https://github.com/dotaeva/scaffolding.git
 ```
 
-**Requirements:** iOS 17+ / macOS 14+ · Swift 5.9+ · Xcode 15+
+**Requirements:** iOS 18+ · macOS 15+ · tvOS 18+ · watchOS 11+ · macCatalyst 18+ · Swift 6.2 · Xcode 16+
 
 ---
 
@@ -85,12 +102,15 @@ final class MainCoordinator: @MainActor FlowCoordinatable {
 
 | Method | Description |
 |---|---|
-| `route(to:as:)` | Navigate to a destination (push, sheet, or fullScreenCover) |
-| `pop()` | Pop the current view |
-| `popToRoot()` | Return to the root |
-| `popToFirst(_:)` / `popToLast(_:)` | Pop to a specific destination |
-| `setRoot(_:)` | Replace the root destination |
-| `isInStack(_:)` | Check if a destination exists in the stack |
+| `route(to:onDismiss:)` | Push a destination onto the stack |
+| `present(_:as:onDismiss:)` | Show a destination as a `.sheet` or `.fullScreenCover` |
+| `pop()` / `popToRoot()` | Pop the topmost / everything-above-root |
+| `popToFirst(_:)` / `popToLast(_:)` | Pop to a specific destination by `Meta` |
+| `setRoot(_:animation:)` | Replace the root destination |
+| `dismissCoordinator()` | Remove the whole coordinator from its parent |
+| `isInStack(_:)` | Check whether a destination exists in the stack |
+
+Each of these methods also exposes a `<T: Coordinatable>` overload with a trailing closure — handy for [deep linking](#advanced-usage).
 
 ### TabCoordinatable — Tab Bars
 
@@ -115,17 +135,16 @@ final class AppCoordinator: @MainActor TabCoordinatable {
 }
 ```
 
-> `TabRole` support requires iOS 18+.
-
 **API:**
 
 | Method | Description |
 |---|---|
-| `selectFirstTab(_:)` / `selectLastTab(_:)` | Select a tab by destination |
-| `select(index:)` / `select(id:)` | Select by index or ID |
+| `selectFirstTab(_:)` / `selectLastTab(_:)` | Select a tab by `Meta` |
+| `select(index:)` / `select(id:)` | Select by index or `UUID` |
 | `appendTab(_:)` / `insertTab(_:at:)` | Add tabs dynamically |
 | `removeFirstTab(_:)` / `removeLastTab(_:)` | Remove tabs |
 | `setTabs(_:)` | Replace all tabs |
+| `present(_:as:onDismiss:)` | Show a destination as a `.sheet` or `.fullScreenCover` |
 
 ### RootCoordinatable — State Switches
 
@@ -147,6 +166,8 @@ One call flips the entire app state:
 coordinator.setRoot(.authenticated)
 ```
 
+`RootCoordinatable` also exposes `present(_:as:onDismiss:)`, so a root coordinator can host a sheet or full-screen cover directly without delegating to a child flow.
+
 ---
 
 ## Full Example
@@ -158,7 +179,7 @@ struct MyApp: App {
 
     var body: some Scene {
         WindowGroup {
-            appCoordinator.view()
+            appCoordinator.view
         }
     }
 }
@@ -188,17 +209,28 @@ final class MainTabCoordinator: @MainActor TabCoordinatable {
 
 ## Advanced Usage
 
-### Nested Routing
+### Deep linking
 
-Navigate through multiple coordinator layers in a single call:
+Every navigation method that resolves a child coordinator
+(`route`, `setRoot`, `appendTab`, `insertTab`, `popToFirst`, `popToLast`,
+`selectFirstTab`, `selectLastTab`, `select(index:)`, `select(id:)`) ships
+a `<T: Coordinatable>` overload with a trailing closure that hands you a
+typed reference to the resolved child once the route lands. (`present(_:as:)`
+itself has no typed overload — present a coordinator, then chain typed
+calls on the routes inside it.) Chain them to walk the tree from a cold
+launch:
 
 ```swift
-coordinator.route(to: .settings) { (settings: SettingsCoordinator) in
-    settings.route(to: .accountDetails) { (account: AccountCoordinator) in
-        account.setUser(currentUser)
+appCoordinator.setRoot(.authenticated) { (tab: MainTabCoordinator) in
+    tab.selectFirstTab(.profile) { (profile: ProfileCoordinator) in
+        profile.route(to: .userDetail(id: userId))
     }
 }
 ```
+
+The closure only fires if the resolved destination can be cast to `T`,
+so pick the concrete coordinator type that matches the route's return
+signature.
 
 ### Environment Access
 
@@ -223,8 +255,36 @@ Each view can inspect how it was presented via the `\.destination` environment v
 ```swift
 @Environment(\.destination) private var destination
 
-// destination.routeType       → .root, .push, .sheet, or .fullScreenCover
-// destination.presentationType → how this view was presented globally
+// destination.routeType        → .root, .push, .sheet, or .fullScreenCover
+// destination.presentationType → effective presentation style
+// destination.meta             → which generated case this destination is
+```
+
+A common use is a single reusable bar that adapts to context — back chevron when pushed, "Close" when presented as a sheet, nothing when it's the root:
+
+```swift
+struct AdaptiveTopBar: View {
+    let title: String
+    @Environment(\.destination) private var destination
+    @Environment(\.dismiss)     private var dismiss
+
+    var body: some View {
+        HStack {
+            switch destination.routeType {
+            case .push:
+                Button { dismiss() } label: { Image(systemName: "chevron.left") }
+            case .sheet, .fullScreenCover:
+                Button("Close") { dismiss() }
+            case .root:
+                Color.clear.frame(width: 24)
+            }
+            Spacer(); Text(title).font(.headline); Spacer()
+            Color.clear.frame(width: 24, height: 1)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+    }
+}
 ```
 
 ### Custom View Wrapping
@@ -250,8 +310,9 @@ Mark a coordinator as `public` to expose its routes across modules — a natural
 
 | Macro | Target | Purpose |
 |---|---|---|
-| `@Scaffoldable` | Class | Generates `Destinations` enum from methods |
-| `@ScaffoldingIgnored` | Method | Excludes a method from destination generation |
+| `@Scaffoldable(injectsCoordinator: Bool = true)` | Class | Generates `Destinations` enum from methods. Pass `injectsCoordinator: false` to opt this coordinator out of automatic environment injection. |
+| `@ScaffoldingTracked` | Method | Explicit opt-in: once applied to any method on a coordinator, only methods carrying it become destinations. |
+| `@ScaffoldingIgnored` | Method | Excludes a method from destination generation (e.g. a `customize(_:)` override). |
 
 ---
 

@@ -11,11 +11,12 @@ must be maintained by hand, and deep linking requires plumbing that touches
 every layer of the app.
 
 Scaffolding solves this by moving navigation into **coordinators** — observable
-classes whose functions *are* the routes. The ``Scaffoldable()`` macro reads
+classes whose functions *are* the routes. The ``Scaffoldable(injectsCoordinator:)`` macro reads
 those functions at compile time and generates a `Destinations` enum
-automatically. You navigate by calling `route(to:)` with a generated case,
-and Scaffolding handles the rest using SwiftUI's native navigation stack,
-sheets, and full-screen covers under the hood.
+automatically. You navigate by calling `route(to:)` to push or
+`present(_:as:)` to show a modal, and Scaffolding handles the rest using
+SwiftUI's native navigation stack, sheets, and full-screen covers under the
+hood.
 
 ### How It Works
 
@@ -23,7 +24,8 @@ sheets, and full-screen covers under the hood.
 2. Conform to one of three coordinator protocols.
 3. Write functions — each one becomes a route.
 4. The macro generates a `Destinations` enum from those functions.
-5. Navigate by calling `coordinator.route(to: .someDestination)`.
+5. Push with `coordinator.route(to: .someDestination)` or present a modal
+   with `coordinator.present(.someDestination, as: .sheet)`.
 
 ### Return Types That Become Routes
 
@@ -39,6 +41,45 @@ function's return type:
 
 Functions marked with ``ScaffoldingIgnored()`` or returning other types are
 skipped.
+
+## Mounting the Coordinator
+
+A coordinator is a plain Swift class — it does not render anything until you
+ask it to. Hold the root coordinator in SwiftUI `@State` at the app entry
+point, then read its `view` property to mount its full navigation hierarchy
+as a SwiftUI view:
+
+```swift
+@main
+struct MyApp: App {
+    @State private var coordinator = AppCoordinator()
+
+    var body: some Scene {
+        WindowGroup {
+            coordinator.view              // computed property — no parens
+        }
+    }
+}
+```
+
+`view` is a **computed property**, not a function. SwiftUI re-renders whenever
+the coordinator's `@Observable` state changes, so the navigation stack,
+presented modals, and injected child coordinators all stay in sync without
+any further wiring.
+
+The same property works in `#Preview` — instantiate the coordinator and read
+`.view` directly:
+
+```swift
+#Preview {
+    HomeCoordinator().view
+}
+```
+
+Only the **root** coordinator needs an explicit `@State` mount. Child
+coordinators returned from route functions (`any Coordinatable`) are
+instantiated by the parent and rendered automatically when the parent routes
+to them.
 
 ## FlowCoordinatable — Navigation Stacks
 
@@ -57,13 +98,17 @@ final class HomeCoordinator: @MainActor FlowCoordinatable {
 }
 ```
 
-Navigate with `route(to:as:)`:
+Push with `route(to:)`, present a modal with `present(_:as:)`:
 
 ```swift
-coordinator.route(to: .detail(item: "Earth"))       // push
-coordinator.route(to: .settings, as: .sheet)         // sheet
-coordinator.route(to: .settings, as: .fullScreenCover) // full-screen cover
+coordinator.route(to: .detail(item: "Earth"))           // push
+coordinator.present(.settings, as: .sheet)              // sheet
+coordinator.present(.settings, as: .fullScreenCover)    // full-screen cover
 ```
+
+`present(_:as:)` is available on every coordinator type, so a
+``TabCoordinatable`` or ``RootCoordinatable`` can host a modal directly
+without delegating to a child flow.
 
 Go back with ``FlowCoordinatable/pop()``,
 ``FlowCoordinatable/popToRoot()``, or pop to a specific destination with
@@ -151,8 +196,43 @@ You can also inspect how the current view was presented by reading the
 @Environment(\.destination) private var destination
 
 // destination.routeType        → .root, .push, .sheet, or .fullScreenCover
-// destination.presentationType → how this view was presented globally
+// destination.presentationType → effective presentation style
+// destination.meta             → which generated case this destination is
 ```
+
+A common use is a single reusable bar that adapts to context — back chevron
+when pushed, **Close** when presented as a sheet, nothing when it is the
+root:
+
+```swift
+struct AdaptiveTopBar: View {
+    let title: String
+
+    @Environment(\.destination) private var destination
+    @Environment(\.dismiss)     private var dismiss
+
+    var body: some View {
+        HStack {
+            switch destination.routeType {
+            case .push:
+                Button { dismiss() } label: { Image(systemName: "chevron.left") }
+            case .sheet, .fullScreenCover:
+                Button("Close") { dismiss() }
+            case .root:
+                Color.clear.frame(width: 24)
+            }
+            Spacer(); Text(title).font(.headline); Spacer()
+            Color.clear.frame(width: 24, height: 1)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+    }
+}
+```
+
+Switch on `destination.meta` when the same view renders different layouts
+depending on which generated case reached it. The `Meta` enum is emitted
+alongside `Destinations` by the macro.
 
 ## Composing Coordinators
 
@@ -162,23 +242,157 @@ coordinator type. A typical app hierarchy might look like:
 
 ```
 AppCoordinator (Root)
-├── LoginCoordinator (Flow)
-└── MainTabCoordinator (Tab)
+├── LoginCoordinator (Flow)              ← unauthenticated
+└── MainTabCoordinator (Tab)             ← authenticated
     ├── HomeCoordinator (Flow)
-    │   └── DetailCoordinator (Flow)
+    │   └── DetailView (push) + SettingsCoordinator (modal)
     └── ProfileCoordinator (Flow)
+        └── EditProfileView (push)
 ```
 
-Navigate through multiple layers in a single call using the closure-based
-API:
+When a presented coordinator needs to return a value to its parent, take an
+`onComplete` callback at construction time. The presenter installs the
+closure when it builds the child; the child invokes it when it has a result,
+then dismisses itself:
 
 ```swift
-coordinator.route(to: .settings) { (settings: SettingsCoordinator) in
-    settings.route(to: .account) { (account: AccountCoordinator) in
-        account.setUser(currentUser)
+// AppCoordinator
+func login(onComplete: @escaping @MainActor (AuthToken) -> Void) -> any Coordinatable {
+    LoginCoordinator(onComplete: onComplete)
+}
+
+func startLogin() {
+    present(.login(onComplete: { [weak self] token in
+        self?.session = token
+    }), as: .sheet)
+}
+```
+
+## Deep Linking
+
+Every navigation method that resolves a child coordinator
+(``FlowCoordinatable/route(to:onDismiss:_:)``,
+``FlowCoordinatable/setRoot(_:animation:_:)``,
+``RootCoordinatable/setRoot(_:animation:_:)``,
+``TabCoordinatable/selectFirstTab(_:_:)``,
+``TabCoordinatable/selectLastTab(_:_:)``,
+``TabCoordinatable/appendTab(_:_:)``,
+``TabCoordinatable/insertTab(_:at:_:)``,
+``FlowCoordinatable/popToFirst(_:_:)``,
+``FlowCoordinatable/popToLast(_:_:)``)
+ships an overload constrained to `<T: Coordinatable>` with a trailing
+closure. The closure fires after the route lands, receiving a typed
+reference to the resolved child — chain them to walk the tree from a cold
+launch:
+
+```swift
+@Scaffoldable @Observable
+final class AppCoordinator: @MainActor RootCoordinatable {
+    var root = Root<AppCoordinator>(root: .unauthenticated)
+
+    func unauthenticated() -> any Coordinatable { LoginCoordinator() }
+    func authenticated()   -> any Coordinatable { MainTabCoordinator() }
+
+    /// Land on the user's profile from a URL / push / quick action.
+    func openProfile(userId: Int) {
+        setRoot(.authenticated) { (tab: MainTabCoordinator) in
+            tab.selectFirstTab(.profile) { (profile: ProfileCoordinator) in
+                profile.route(to: .userDetail(id: userId))
+            }
+        }
     }
 }
 ```
+
+Hook the entry point to whatever launched the app:
+
+```swift
+WindowGroup {
+    coordinator.view
+        .onOpenURL { url in
+            if let userId = parseUserURL(url) {
+                coordinator.openProfile(userId: userId)
+            }
+        }
+}
+```
+
+The typed closure only fires if the resolved child can be cast to `T`. Pick
+the concrete coordinator type that matches the route's return signature —
+for `func authenticated() -> any Coordinatable { MainTabCoordinator() }`,
+the closure parameter must be `MainTabCoordinator`.
+
+## Dismissing a Flow
+
+`pop()` and `dismissCoordinator()` are not the same call. `pop()` removes a
+single pushed screen from the current flow's stack.
+``Coordinatable/dismissCoordinator()`` removes the **entire coordinator**
+from its parent — collapsing whatever sub-tree it owns (its root, every
+screen it has pushed, every modal it has presented) in one move.
+
+The difference shows up clearly in a nested flow. An `AppCoordinator`
+presents a `LoginCoordinator` as a sheet; the login flow is itself two
+screens (`email` → `password`). Calling `dismissCoordinator()` on the
+password screen closes the whole sheet at once — not just the password
+screen:
+
+```swift
+struct PasswordStepView: View {
+    @Environment(LoginCoordinator.self) private var coordinator
+    let email: String
+    @State private var password = ""
+
+    var body: some View {
+        Form {
+            SecureField("Password", text: $password)
+            HStack {
+                Button("Back")    { coordinator.pop() }                    // pop ONE screen
+                Button("Sign in") {
+                    let token = signIn(email: email, password: password)
+                    coordinator.onComplete(token)
+                    coordinator.dismissCoordinator()                       // close the whole sheet
+                }
+            }
+        }
+    }
+}
+```
+
+For a single-screen back button inside a flow, prefer `pop()` or SwiftUI's
+`@Environment(\.dismiss)`. Reach for `dismissCoordinator()` when the intent
+is "I am done with this whole sub-flow," typically right after handing a
+result back through an `onComplete` callback.
+
+> Calling ``Coordinatable/dismissCoordinator()`` on the root coordinator is
+a no-op — there is no parent to remove it from.
+
+## Previewing Coordinator Code
+
+SwiftUI's `#Preview` macro and Scaffolding's `@Scaffoldable` macro both run
+at compile time, but they do not see each other the way the runtime does.
+A handful of preview-only papercuts are easy to chase as bugs if you are
+not expecting them:
+
+- **The macro-generated routes cannot seed a custom initial state.** The
+  `Destinations` enum is emitted as a member of the coordinator type, and
+  the stack is constructed from a literal root case. There is no
+  synthesised `init(initialRoute:)` — passing
+  `HomeCoordinator(initialRoute: .detail)` does not compile. Preview the
+  coordinator at its real root, or render the deeper screen directly.
+- **Views that use `@Environment(SomeCoordinator.self)` need an explicit
+  injection.** At runtime Scaffolding installs each coordinator into the
+  environment of every view it manages. In `#Preview` you usually render a
+  view by itself, outside the coordinator's view chain — so the
+  environment is missing. Pass it yourself:
+  `SomeScreen().environment(HomeCoordinator())`.
+- **`\.destination` does not fully reflect runtime in previews.**
+  Scaffolding sets the value when it materialises a destination through a
+  route or modal presentation. A view rendered alone in `#Preview` is in no
+  destination, so `destination.routeType`, `destination.presentationType`,
+  and `destination.meta` read as `.root`. Avoid making rendering decisions
+  that depend on those properties matching runtime; the `AdaptiveTopBar`
+  pattern above is preview-safe because it falls through gracefully when
+  the value is `.root`.
 
 ## Customizing Views
 
