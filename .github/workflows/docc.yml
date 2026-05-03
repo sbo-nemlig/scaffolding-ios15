@@ -41,20 +41,8 @@ jobs:
             --transform-for-static-hosting \
             --hosting-base-path scaffolding
 
-      - name: Create root redirect
-        run: |
-          cat > docs/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta http-equiv="refresh" content="0; url=documentation/scaffolding/" />
-              <script>window.location.href = "documentation/scaffolding/"</script>
-            </head>
-            <body>
-              <p>Redirecting to <a href="documentation/scaffolding/">documentation</a>...</p>
-            </body>
-          </html>
-          EOF
+      # No root redirect — the Svelte site owns `/scaffolding/`. DocC
+      # remains accessible at `/scaffolding/documentation/scaffolding/`.
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
