@@ -66,16 +66,6 @@
             commits the sheet or full-screen cover.
           </span>
         </li>
-        <li>
-          <span class="hl-tag fix">Fix</span>
-          <span class="hl-body">
-            Tutorial — Settings dismissal now uses
-            <code>coordinator.pop()</code> (the modal lives on the host
-            flow's unified stack).
-            <code>dismissCoordinator()</code> on a root coordinator with
-            no parent is a no-op, which the previous sample missed.
-          </span>
-        </li>
       </ul>
       <CodeBlock code={CODE_PRESENT_TYPED} label="HomeCoordinator · openSubscriptionAt" />
       <p class="sub">
