@@ -1,6 +1,7 @@
 import SwiftUI
 import Scaffolding
 
+@available(iOS 17, *)
 struct DetailView: View {
     @Environment(AppCoordinator.self) private var coordinator
 

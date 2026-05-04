@@ -23,9 +23,9 @@ struct DummyDestinationMeta: @MainActor DestinationMeta {
 struct DummyDestinations: @MainActor Destinationable {
     typealias Meta = DummyDestinationMeta
     typealias Owner = DummyCoordinatable
-    
+
     var meta: DummyDestinationMeta { DummyDestinationMeta() }
-    
+
     func value(for instance: DummyCoordinatable) -> Destination {
         Destination.dummy
     }
@@ -37,7 +37,7 @@ struct DummyDestinations: @MainActor Destinationable {
 @MainActor
 final class DummyCoordinatable: @MainActor Coordinatable {
     typealias Destinations = DummyDestinations
-    
+
     let id = UUID()
     var _dataId: ObjectIdentifier { ObjectIdentifier(self) }
     var parent: (any Coordinatable)?
@@ -46,15 +46,15 @@ final class DummyCoordinatable: @MainActor Coordinatable {
     var view: some View {
         EmptyView()
     }
-    
+
     func setHasLayerNavigationCoordinatable(_ value: Bool) {
         hasLayerNavigationCoordinatable = value
     }
-    
+
     func setParent(_ value: any Coordinatable) {
         parent = value
     }
-    
+
     static let shared = DummyCoordinatable()
 }
 

@@ -53,14 +53,14 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     public var isSetup: Bool = false
     private var initialRoot: Coordinator.Destinations?
     private var coordinator: Coordinator?
-    
+
     /// Creates a new root container with the given initial destination.
     ///
     /// - Parameter root: The destination case to display initially.
     public init(root: Coordinator.Destinations) {
         self.initialRoot = root
     }
-    
+
     /// Performs one-time setup, resolving the initial root destination.
     ///
     /// - Parameter coordinator: The coordinator that owns this container.
@@ -68,10 +68,10 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
         guard !isSetup else { return }
         if let rootDestination = initialRoot, root == nil {
             var rootDest = rootDestination.value(for: coordinator)
-            
+
             rootDest.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinator)
             rootDest.coordinatable?.setParent(coordinator)
-            
+
             if let presentedAs = presentedAs {
                 rootDest.setPushType(presentedAs)
                 if let flowCoordinator = rootDest.coordinatable as? any FlowCoordinatable {
@@ -82,18 +82,18 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
                     rootCoordinator.setPresentedAs(presentedAs)
                 }
             }
-            
+
             root = rootDest
             self.initialRoot = nil
         }
         self.isSetup = true
     }
-    
+
     /// Sets the parent coordinator reference.
     public func setParent(_ parent: any Coordinatable) {
         self.parent = parent
     }
-    
+
     func setAnimation(animation: Animation?) {
         self.animation = animation
     }
@@ -105,15 +105,15 @@ extension Root {
         withAnimation(animation ?? self.animation) {
             var mutableRoot = root
             mutableRoot.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinator)
-            
+
             if let coordinator {
                 mutableRoot.coordinatable?.setParent(coordinator)
             }
-            
+
             if let presentedAs = presentedAs, mutableRoot.pushType == nil {
                 mutableRoot.setPushType(presentedAs)
             }
-            
+
             self.root = mutableRoot
         }
     }
