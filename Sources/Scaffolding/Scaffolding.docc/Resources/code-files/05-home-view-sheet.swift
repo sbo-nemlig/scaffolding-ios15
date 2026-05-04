@@ -18,7 +18,7 @@ struct HomeView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
-                    coordinator.route(to: .settings, as: .sheet)
+                    coordinator.present(.settings, as: .sheet)
                 } label: {
                     Image(systemName: "gear")
                 }

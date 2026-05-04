@@ -2,7 +2,7 @@ name: ScaffoldingDemo
 options:
   bundleIdPrefix: com.scaffolding
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "18.0"
   xcodeVersion: "16.0"
 packages:
   Scaffolding:

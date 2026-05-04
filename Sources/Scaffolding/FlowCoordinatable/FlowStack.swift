@@ -11,7 +11,7 @@ import Observation
 /// A type-erased protocol for ``FlowStack`` that allows the framework
 /// to manipulate navigation state without knowing the concrete coordinator
 /// type.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol AnyFlowStack: AnyObject, CoordinatableData where Coordinator: FlowCoordinatable {
     /// The root destination of the navigation stack.
@@ -33,7 +33,7 @@ public protocol AnyFlowStack: AnyObject, CoordinatableData where Coordinator: Fl
 /// ```swift
 /// var stack = FlowStack<HomeCoordinator>(root: .home)
 /// ```
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 @Observable
 public class FlowStack<Coordinator: FlowCoordinatable>: AnyFlowStack {
@@ -95,7 +95,7 @@ public class FlowStack<Coordinator: FlowCoordinatable>: AnyFlowStack {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension FlowStack {
     func push(destination: Destination) {
@@ -107,11 +107,16 @@ extension FlowStack {
             coordinator?.dismissCoordinator()
             return
         }
-        destinations.removeLast()
+        let removed = destinations.removeLast()
+        removed.resolveDismissal()
     }
 
     func popToRoot() {
+        let removed = destinations
         destinations.removeAll()
+        for destination in removed {
+            destination.resolveDismissal()
+        }
     }
 
     func popToFirst(_ destination: Coordinator.Destinations.Meta) -> Destination? {
@@ -133,7 +138,11 @@ extension FlowStack {
 
         let newCount = firstIndex + 1
         if destinations.count > newCount {
+            let removed = destinations[newCount...]
             destinations.removeSubrange(newCount...)
+            for destination in removed {
+                destination.resolveDismissal()
+            }
         }
 
         return targetDestination
@@ -158,7 +167,11 @@ extension FlowStack {
 
         let newCount = lastIndex + 1
         if destinations.count > newCount {
+            let removed = destinations[newCount...]
             destinations.removeSubrange(newCount...)
+            for destination in removed {
+                destination.resolveDismissal()
+            }
         }
 
         return targetDestination
@@ -171,7 +184,16 @@ extension FlowStack {
              // invalid once the root changes. Clearing them first ensures
              // the NavigationStack path is empty before the root view
              // switches, preventing a stale navigation bar.
+             let removedDestinations = destinations
              destinations.removeAll()
+
+             // Pushed destinations and the previous root were torn down
+             // because the parent's state changed underneath them — that
+             // is a cancellation, not a user-initiated dismissal.
+             for destination in removedDestinations {
+                 destination.resolveDismissal()
+             }
+             self.root?.resolveDismissal()
 
              var mutableRoot = root
              mutableRoot.coordinatable?.setHasLayerNavigationCoordinatable(true)

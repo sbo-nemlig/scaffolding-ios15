@@ -17,7 +17,7 @@ import os.log
 ///
 /// You do not conform to `Coordinatable` directly — use one of the
 /// three specialized protocols instead.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol Coordinatable: AnyObject, Identifiable {
     associatedtype Destinations: Destinationable where Destinations.Owner == Self
@@ -27,7 +27,7 @@ public protocol Coordinatable: AnyObject, Identifiable {
     var _dataId: ObjectIdentifier { get }
     var parent: (any Coordinatable)? { get }
     var hasLayerNavigationCoordinatable: Bool { get }
-    func view() -> ViewType
+    var view: ViewType { get }
     func setHasLayerNavigationCoordinatable(_ value: Bool)
     func setParent(_ value: any Coordinatable)
 
@@ -43,9 +43,17 @@ public protocol Coordinatable: AnyObject, Identifiable {
     func customize(_ view: AnyView) -> CustomizeContentView
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension Coordinatable {
+    /// Whether this coordinator should be injected into descendant
+    /// views' environment (`@Environment(MyCoordinator.self)`).
+    ///
+    /// Defaults to `true`. Override by passing
+    /// `@Scaffoldable(injectsCoordinator: false)`, which causes the
+    /// macro to emit a property returning `false`.
+    nonisolated var _injectsCoordinator: Bool { true }
+
     func customize(_ view: AnyView) -> some View {
         view
     }
@@ -56,15 +64,56 @@ public extension Coordinatable {
     /// entire flow is dismissed. If it lives inside a stack as a pushed
     /// destination, only that destination is removed. Tab children cannot
     /// be dismissed and will log a warning instead.
+    ///
+    /// The destination's `onDismiss` callback (and any awaiting
+    /// `await route(...)` continuation) fires exactly once.
     func dismissCoordinator() {
         let logger = Logger(subsystem: "Scaffolding", category: "Dismissal")
 
-        if parent is (any TabCoordinatable) {
+        if let parent = parent as? (any TabCoordinatable) {
+            // Modal child of a TabCoordinatable → remove from container.modals.
+            let selfId = AnyHashable(self.id)
+            if parent.anyTabItems.modals.contains(where: {
+                guard let cId = $0.coordinatable?.id else { return false }
+                return AnyHashable(cId) == selfId
+            }) {
+                let toRemove = parent.anyTabItems.modals.filter {
+                    guard let cId = $0.coordinatable?.id else { return false }
+                    return AnyHashable(cId) == selfId
+                }
+                parent.anyTabItems.modals.removeAll {
+                    guard let cId = $0.coordinatable?.id else { return false }
+                    return AnyHashable(cId) == selfId
+                }
+                for destination in toRemove { destination.resolveDismissal() }
+                return
+            }
             logger.critical("Scaffolding: The coordinator you're trying to dismiss is a TabView child, it will not be dismissed.")
             return
         }
 
         if let parent = parent as? (any RootCoordinatable) {
+            // Modal child of a RootCoordinatable → remove from container.modals.
+            let selfId = AnyHashable(self.id)
+            if parent.anyRoot.modals.contains(where: {
+                guard let cId = $0.coordinatable?.id else { return false }
+                return AnyHashable(cId) == selfId
+            }) {
+                let toRemove = parent.anyRoot.modals.filter {
+                    guard let cId = $0.coordinatable?.id else { return false }
+                    return AnyHashable(cId) == selfId
+                }
+                parent.anyRoot.modals.removeAll {
+                    guard let cId = $0.coordinatable?.id else { return false }
+                    return AnyHashable(cId) == selfId
+                }
+                for destination in toRemove { destination.resolveDismissal() }
+                if let selfFlow = self as? any FlowCoordinatable {
+                    selfFlow.anyStack.destinations.removeAll()
+                }
+                return
+            }
+            _resolveOwningDestination()
             parent.parent?.dismissCoordinator()
             // Fallback: if parent.parent was nil or could not dismiss,
             // clean up own pushed destinations to avoid stale navigation state.
@@ -80,6 +129,7 @@ public extension Coordinatable {
             if let root = parent.anyStack.root,
                let rootCoordinatable = root.coordinatable?.id,
                AnyHashable(rootCoordinatable) == selfId {
+                _resolveOwningDestination()
                 parent.dismissCoordinator()
                 // Fallback: clean up own destinations in case the parent
                 // could not be dismissed (e.g. parent chain hits a tab child).
@@ -96,6 +146,10 @@ public extension Coordinatable {
                 guard let coordinatableId = $0.coordinatable?.id else { return false }
                 return AnyHashable(coordinatableId) == selfId
             }) {
+                let removed = parent.anyStack.destinations[selfIndex...]
+                for destination in removed {
+                    destination.resolveDismissal()
+                }
                 parent.anyStack.destinations.removeSubrange(selfIndex...)
             }
         }
@@ -106,7 +160,67 @@ public extension Coordinatable {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
+@MainActor
+extension Coordinatable {
+    /// Walks the parent's stack/root/tabItems to find the destination
+    /// that wraps `self` and fires its dismissal resolution.
+    func _resolveOwningDestination() {
+        guard let parent else { return }
+        let selfId = AnyHashable(self.id)
+
+        let candidates: [Destination] = {
+            if let flow = parent as? any FlowCoordinatable {
+                var arr: [Destination] = []
+                if let r = flow.anyStack.root { arr.append(r) }
+                arr.append(contentsOf: flow.anyStack.destinations)
+                return arr
+            }
+            if let root = parent as? any RootCoordinatable {
+                var arr: [Destination] = []
+                if let r = root.anyRoot.root { arr.append(r) }
+                arr.append(contentsOf: root.anyRoot.modals)
+                return arr
+            }
+            if let tab = parent as? any TabCoordinatable {
+                var arr: [Destination] = tab.anyTabItems.tabs
+                arr.append(contentsOf: tab.anyTabItems.modals)
+                return arr
+            }
+            return []
+        }()
+
+        if let owner = candidates.first(where: {
+            guard let cId = $0.coordinatable?.id else { return false }
+            return AnyHashable(cId) == selfId
+        }) {
+            owner.resolveDismissal()
+        }
+    }
+}
+
+@available(iOS 18, macOS 15, *)
+@MainActor
+extension Coordinatable {
+    /// Removes a modal destination hosted directly on this coordinator's
+    /// container (Root.modals or TabItems.modals) and fires its dismissal
+    /// resolution. No-op for FlowCoordinatable, which manages modals
+    /// through its FlowStack.
+    func removeContainerModal(id: UUID, type: ModalPresentationType) {
+        let target = type.presentationType
+        if let root = self as? any RootCoordinatable {
+            let toRemove = root.anyRoot.modals.filter { $0.id == id && $0.pushType == target }
+            root.anyRoot.modals.removeAll { $0.id == id && $0.pushType == target }
+            for destination in toRemove { destination.resolveDismissal() }
+        } else if let tab = self as? any TabCoordinatable {
+            let toRemove = tab.anyTabItems.modals.filter { $0.id == id && $0.pushType == target }
+            tab.anyTabItems.modals.removeAll { $0.id == id && $0.pushType == target }
+            for destination in toRemove { destination.resolveDismissal() }
+        }
+    }
+}
+
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension Coordinatable {
     func customizeErased(_ view: AnyView) -> AnyView {
@@ -117,9 +231,9 @@ extension Coordinatable {
 /// A type that bridges between a coordinator's `Destinations` enum and the
 /// concrete ``Destination`` value used at runtime.
 ///
-/// The ``Scaffoldable()`` macro generates a conforming type automatically —
+/// The ``Scaffoldable(injectsCoordinator:)`` macro generates a conforming type automatically —
 /// you do not need to implement this protocol yourself.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol Destinationable {
     associatedtype Meta: DestinationMeta

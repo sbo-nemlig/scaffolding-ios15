@@ -13,7 +13,7 @@ import Observation
 /// Conform to `RootCoordinatable` to build flows where the entire screen
 /// content is swapped at once — for example, switching between
 /// authentication and main-app coordinators. Provide a ``Root`` property
-/// and define destination functions using the ``Scaffoldable()`` macro.
+/// and define destination functions using the ``Scaffoldable(injectsCoordinator:)`` macro.
 ///
 /// ```swift
 /// @Scaffoldable @Observable
@@ -24,7 +24,7 @@ import Observation
 ///     func main() -> any Coordinatable { MainTabCoordinator() }
 /// }
 /// ```
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol RootCoordinatable: Coordinatable where ViewType == RootCoordinatableView {
     /// The observable container that holds the current root destination.
@@ -34,7 +34,7 @@ public protocol RootCoordinatable: Coordinatable where ViewType == RootCoordinat
     var anyRoot: any AnyRoot { get }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension RootCoordinatable {
     var _dataId: ObjectIdentifier {
@@ -46,7 +46,7 @@ public extension RootCoordinatable {
         return root
     }
 
-    func view() -> RootCoordinatableView {
+    var view: RootCoordinatableView {
         root.setup(for: self)
         return .init(coordinator: self)
     }
@@ -73,7 +73,7 @@ public extension RootCoordinatable {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension RootCoordinatable {
     /// Switches the root destination.
@@ -93,44 +93,70 @@ public extension RootCoordinatable {
         return self
     }
 
-    /// Switches the root destination and passes the resolved coordinator
-    /// or view to a callback.
-    ///
-    /// - Parameters:
-    ///   - destination: The new root destination.
-    ///   - animation: An optional animation override.
-    ///   - value: A closure that receives the resolved destination,
-    ///     cast to `T`.
-    /// - Returns: `self` for chaining.
-    @discardableResult
-    func setRoot<T>(
-        _ destination: Destinations,
-        animation: Animation? = nil,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let dest = destination.value(for: self)
-
-        dest.coordinatable?.setParent(self)
-        root.setRoot(root: dest, animation: animation)
-
-        if dest.coordinatable != nil, let coordinatable = dest.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = dest.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
-        return self
-    }
-
     /// Returns whether the current root matches the given destination.
     func isRoot(_ destination: Destinations.Meta) -> Bool {
-        return root.root?.meta as! Self.Destinations.Meta == destination
+        guard let rootMeta = root.root?.meta as? Self.Destinations.Meta else { return false }
+        return rootMeta == destination
+    }
+
+    /// Switches the root and invokes a typed callback with the resolved
+    /// child coordinator.
+    @discardableResult
+    func setRoot<T: Coordinatable>(
+        _ destination: Destinations,
+        animation: Animation? = nil,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        let dest = destination.value(for: self)
+        dest.coordinatable?.setParent(self)
+        root.setRoot(root: dest, animation: animation)
+        if let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
+@MainActor
+public extension RootCoordinatable {
+    /// Presents a destination modally on this root coordinator.
+    ///
+    /// The modal lives on this coordinator's container and is rendered
+    /// as a sheet or full-screen cover by the root's view layer.
+    ///
+    /// - Parameters:
+    ///   - destination: The destination to present.
+    ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - onDismiss: A closure invoked when the modal is dismissed.
+    /// - Returns: `self` for chaining.
+    @discardableResult
+    func present(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        onDismiss: @escaping @MainActor () -> Void = { }
+    ) -> Self {
+        var dest = destination.value(for: self)
+        dest.setOnDismiss(onDismiss)
+        dest.setPushType(type.presentationType)
+        dest.setRouteType(DestinationType.from(presentationType: type.presentationType))
+        dest.coordinatable?.setHasLayerNavigationCoordinatable(false)
+        dest.coordinatable?.setParent(self)
+
+        if let flowCoordinator = dest.coordinatable as? any FlowCoordinatable {
+            flowCoordinator.setPresentedAs(type.presentationType)
+        } else if let tabCoordinator = dest.coordinatable as? any TabCoordinatable {
+            tabCoordinator.setPresentedAs(type.presentationType)
+        } else if let rootCoordinator = dest.coordinatable as? any RootCoordinatable {
+            rootCoordinator.setPresentedAs(type.presentationType)
+        }
+
+        anyRoot.modals.append(dest)
+        return self
+    }
+}
+
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension RootCoordinatable {
     func setPresentedAs(_ type: PresentationType) {
@@ -144,9 +170,9 @@ public extension RootCoordinatable {
 
 /// The SwiftUI view generated by a ``RootCoordinatable`` coordinator.
 ///
-/// You never create this view directly — call ``Coordinatable/view()``
+/// You never create this view directly — access ``Coordinatable/view``
 /// on a `RootCoordinatable` coordinator to obtain it.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 public struct RootCoordinatableView: CoordinatableView {
     private let _coordinator: any RootCoordinatable
 
@@ -169,11 +195,23 @@ public struct RootCoordinatableView: CoordinatableView {
         }
     }
 
+    private func modals(of type: ModalPresentationType) -> [Destination] {
+        let target = type.presentationType
+        return _coordinator.anyRoot.modals.filter { $0.pushType == target }
+    }
+
     public var body: some View {
         coordinator.customize(
             AnyView(
                 coordinatableView()
             )
+        )
+        .applyContainerModals(
+            sheets: modals(of: .sheet),
+            fullScreenCovers: modals(of: .fullScreenCover),
+            onDismissSheet: { id in (_coordinator as any Coordinatable).removeContainerModal(id: id, type: .sheet) },
+            onDismissFullScreenCover: { id in (_coordinator as any Coordinatable).removeContainerModal(id: id, type: .fullScreenCover) },
+            modalContent: wrappedView
         )
         .environmentCoordinatable(coordinator)
     }

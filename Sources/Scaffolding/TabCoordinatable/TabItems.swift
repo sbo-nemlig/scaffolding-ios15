@@ -10,7 +10,7 @@ import Observation
 
 /// A type-erased protocol for ``TabItems`` that allows the framework to
 /// manipulate tab state without knowing the concrete coordinator type.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: TabCoordinatable {
     /// The resolved tab destinations.
@@ -21,6 +21,8 @@ public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: Tab
     var tabBarVisibility: Visibility { get set }
     /// The presentation type if this tab coordinator was presented modally.
     var presentedAs: PresentationType? { get set }
+    /// Modal destinations presented from this coordinator.
+    var modals: [Destination] { get set }
 }
 
 /// Observable state container for a ``TabCoordinatable`` coordinator.
@@ -34,7 +36,7 @@ public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: Tab
 ///     tabs: [.home, .profile, .settings]
 /// )
 /// ```
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 @Observable
 public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
@@ -44,6 +46,8 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
     public var hasLayerNavigationCoordinator: Bool = false
     /// The presentation type when this coordinator was presented modally.
     public var presentedAs: PresentationType?
+    /// Modal destinations presented from this coordinator.
+    public var modals: [Destination] = []
 
     /// The resolved tab destinations.
     public var tabs: [Destination] = .init()
@@ -148,7 +152,7 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 extension TabItems {
     func select(first tab: Coordinator.Destinations.Meta) -> Destination? {
         guard isSetup else {
@@ -305,4 +309,5 @@ extension TabItems {
             }
         }
     }
+
 }

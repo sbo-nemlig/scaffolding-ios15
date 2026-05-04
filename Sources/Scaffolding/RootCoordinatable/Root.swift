@@ -10,7 +10,7 @@ import Observation
 
 /// A type-erased protocol for ``Root`` that allows the framework to
 /// manipulate root state without knowing the concrete coordinator type.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoordinatable {
     /// The current root destination.
@@ -19,6 +19,8 @@ public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoo
     var animation: Animation? { get set }
     /// The presentation type if this root coordinator was presented modally.
     var presentedAs: PresentationType? { get set }
+    /// Modal destinations presented from this coordinator.
+    var modals: [Destination] { get set }
 }
 
 /// Observable state container for a ``RootCoordinatable`` coordinator.
@@ -30,7 +32,7 @@ public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoo
 /// ```swift
 /// var root = Root<AppCoordinator>(root: .login)
 /// ```
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 @Observable
 public class Root<Coordinator: RootCoordinatable>: AnyRoot {
@@ -44,6 +46,8 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     public var animation: Animation? = .default
     /// The presentation type when this coordinator was presented modally.
     public var presentedAs: PresentationType?
+    /// Modal destinations presented from this coordinator.
+    public var modals: [Destination] = []
 
     /// Whether ``setup(for:)`` has been called.
     public var isSetup: Bool = false
@@ -95,7 +99,7 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 extension Root {
     func setRoot(root: Destination, animation: Animation?) {
         withAnimation(animation ?? self.animation) {

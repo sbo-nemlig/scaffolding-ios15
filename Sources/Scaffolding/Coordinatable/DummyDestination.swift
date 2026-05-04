@@ -9,7 +9,7 @@ import SwiftUI
 
 // MARK: - Dummy Meta
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 struct DummyDestinationMeta: @MainActor DestinationMeta {
     static func == (lhs: DummyDestinationMeta, rhs: DummyDestinationMeta) -> Bool {
         true
@@ -18,7 +18,7 @@ struct DummyDestinationMeta: @MainActor DestinationMeta {
 
 // MARK: - Dummy Destinations
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 struct DummyDestinations: @MainActor Destinationable {
     typealias Meta = DummyDestinationMeta
@@ -33,7 +33,7 @@ struct DummyDestinations: @MainActor Destinationable {
 
 // MARK: - Dummy Coordinatable
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 final class DummyCoordinatable: @MainActor Coordinatable {
     typealias Destinations = DummyDestinations
@@ -42,8 +42,8 @@ final class DummyCoordinatable: @MainActor Coordinatable {
     var _dataId: ObjectIdentifier { ObjectIdentifier(self) }
     var parent: (any Coordinatable)?
     var hasLayerNavigationCoordinatable: Bool = false
-
-    func view() -> some View {
+    
+    var view: some View {
         EmptyView()
     }
 
@@ -60,7 +60,7 @@ final class DummyCoordinatable: @MainActor Coordinatable {
 
 // MARK: - Dummy Destination
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 extension Destination {
     @MainActor
     static let dummy: Destination = Destination(

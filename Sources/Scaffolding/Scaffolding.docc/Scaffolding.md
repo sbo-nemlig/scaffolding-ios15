@@ -10,7 +10,7 @@ type-safe routes and minimal boilerplate.
 ## Overview
 
 Scaffolding lets you define navigation routes as plain Swift functions on
-coordinator classes. The ``Scaffoldable()`` macro inspects those functions at
+coordinator classes. The ``Scaffoldable(injectsCoordinator:)`` macro inspects those functions at
 compile time and generates a `Destinations` enum automatically — no manual
 enums, no switch statements, no boilerplate.
 
@@ -35,10 +35,11 @@ pattern:
 - **``RootCoordinatable``** — Atomic root switches for authentication flows
   and app-wide state changes.
 
-Navigation is performed by calling methods like `route(to:)`, `pop()`,
-`setRoot(_:)`, or tab selection on the coordinator. Coordinators are
-automatically injected into the SwiftUI environment, so any child view can
-access its nearest coordinator with `@Environment`.
+Navigation is performed by calling methods on the coordinator: `route(to:)`
+to push, `present(_:as:)` to show a sheet or full-screen cover, `pop()`,
+`setRoot(_:)`, or tab selection. Coordinators are automatically injected
+into the SwiftUI environment, so any child view can access its nearest
+coordinator with `@Environment`.
 
 ## Topics
 
@@ -64,6 +65,7 @@ access its nearest coordinator with `@Environment`.
 - ``Destination``
 - ``DestinationType``
 - ``PresentationType``
+- ``ModalPresentationType``
 
 ### State Containers
 
@@ -73,5 +75,6 @@ access its nearest coordinator with `@Environment`.
 
 ### Macros
 
-- ``Scaffoldable()``
+- ``Scaffoldable(injectsCoordinator:)``
+- ``ScaffoldingTracked()``
 - ``ScaffoldingIgnored()``

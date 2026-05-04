@@ -5,11 +5,7 @@ import Scaffolding
 struct ScaffoldingDemoApp: App {
     var body: some Scene {
         WindowGroup {
-            if #available(iOS 17, *) {
-                AppRootView()
-            } else {
-                Text("Requires iOS 17 or later.")
-            }
+            coordinator.view
         }
     }
 }

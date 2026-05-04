@@ -13,7 +13,7 @@ import Observation
 /// Conform to `TabCoordinatable` to build a `TabView` where each tab is
 /// a destination — either a plain view or a child coordinator. Provide a
 /// ``TabItems`` property and define tab functions using the
-/// ``Scaffoldable()`` macro.
+/// ``Scaffoldable(injectsCoordinator:)`` macro.
 ///
 /// ```swift
 /// @Scaffoldable @Observable
@@ -26,7 +26,7 @@ import Observation
 ///     func settings() -> some View { SettingsView() }
 /// }
 /// ```
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol TabCoordinatable: Coordinatable where ViewType == TabCoordinatableView {
     /// The observable container that holds this coordinator's tab
@@ -37,7 +37,7 @@ public protocol TabCoordinatable: Coordinatable where ViewType == TabCoordinatab
     var anyTabItems: any AnyTabItems { get }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     var _dataId: ObjectIdentifier {
@@ -49,7 +49,7 @@ public extension TabCoordinatable {
         return tabItems
     }
 
-    func view() -> TabCoordinatableView {
+    var view: TabCoordinatableView {
         tabItems.setup(for: self)
         return .init(coordinator: self)
     }
@@ -79,7 +79,7 @@ public extension TabCoordinatable {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension TabCoordinatable {
     var selectedTabBinding: Binding<UUID?> {
@@ -90,7 +90,7 @@ extension TabCoordinatable {
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     /// Selects the **first** tab matching the given destination.
@@ -100,28 +100,6 @@ public extension TabCoordinatable {
     @discardableResult
     func selectFirstTab(_ tab: Destinations.Meta) -> Self {
         let _ = tabItems.select(first: tab)
-        return self
-    }
-
-    /// Selects the **first** tab matching the given destination and passes
-    /// it to a callback.
-    @discardableResult
-    func selectFirstTab<T>(
-        _ tab: Destinations.Meta,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let tab = tabItems.select(first: tab)
-
-        guard let tab else { return self }
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
         return self
     }
 
@@ -135,28 +113,6 @@ public extension TabCoordinatable {
         return self
     }
 
-    /// Selects the **last** tab matching the given destination and passes
-    /// it to a callback.
-    @discardableResult
-    func selectLastTab<T>(
-        _ tab: Destinations.Meta,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let tab = tabItems.select(last: tab)
-
-        guard let tab else { return self }
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
-        return self
-    }
-
     /// Selects a tab by its zero-based index.
     ///
     /// - Parameter index: The position of the tab to select.
@@ -167,27 +123,6 @@ public extension TabCoordinatable {
         return self
     }
 
-    /// Selects a tab by index and passes it to a callback.
-    @discardableResult
-    func select<T>(
-        index: Int,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let tab = tabItems.select(index)
-
-        guard let tab else { return self }
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
-        return self
-    }
-
     /// Selects a tab by its unique identifier.
     ///
     /// - Parameter id: The UUID of the tab to select.
@@ -195,27 +130,6 @@ public extension TabCoordinatable {
     @discardableResult
     func select(id: UUID) -> Self {
         let _ = tabItems.select(id)
-        return self
-    }
-
-    /// Selects a tab by UUID and passes it to a callback.
-    @discardableResult
-    func select<T>(
-        id: UUID,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let tab = tabItems.select(id)
-
-        guard let tab else { return self }
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
         return self
     }
 
@@ -252,29 +166,6 @@ public extension TabCoordinatable {
         return self
     }
 
-    /// Appends a new tab and passes it to a callback.
-    @discardableResult
-    func appendTab<T>(
-        _ tab: Destinations,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let t = tab.value(for: self)
-        t.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinatable)
-        t.coordinatable?.setParent(self)
-
-        let tab = tabItems.appendTab(t)
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
-
-        return self
-    }
-
     /// Inserts a new tab at the given index.
     ///
     /// - Parameters:
@@ -289,30 +180,6 @@ public extension TabCoordinatable {
         tab.coordinatable?.setParent(self)
 
         let _ = tabItems.insertTab(tab, at: index)
-
-        return self
-    }
-
-    /// Inserts a new tab at the given index and passes it to a callback.
-    @discardableResult
-    func insertTab<T>(
-        _ tab: Destinations,
-        at index: Int,
-        value: @escaping (T) -> Void
-    ) -> Self {
-        let t = tab.value(for: self)
-        t.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinatable)
-        t.coordinatable?.setParent(self)
-
-        let tab = tabItems.insertTab(t, at: index)
-
-        if tab.coordinatable != nil, let coordinatable = tab.coordinatable as? T {
-            value(coordinatable)
-        } else if let view = tab.view as? T {
-            value(view)
-        } else {
-            fatalError("Could not cast to type \(T.self)")
-        }
 
         return self
     }
@@ -340,11 +207,150 @@ public extension TabCoordinatable {
     /// Returns whether the given destination is currently present in the
     /// tab bar.
     func isInTabItems(_ meta: Destinations.Meta) -> Bool {
-        tabItems.tabs.contains(where: { $0.meta as! Self.Destinations.Meta == meta })
+        tabItems.tabs.contains { tab in
+            guard let tabMeta = tab.meta as? Self.Destinations.Meta else { return false }
+            return tabMeta == meta
+        }
     }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
+@MainActor
+public extension TabCoordinatable {
+    /// Selects the **first** tab matching the given destination and
+    /// invokes a typed callback with the tab's child coordinator, if any.
+    @discardableResult
+    func selectFirstTab<T: Coordinatable>(
+        _ tab: Destinations.Meta,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = tabItems.select(first: tab),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Selects the **last** tab matching the given destination and
+    /// invokes a typed callback with the tab's child coordinator, if any.
+    @discardableResult
+    func selectLastTab<T: Coordinatable>(
+        _ tab: Destinations.Meta,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = tabItems.select(last: tab),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Selects a tab by index and invokes a typed callback with the
+    /// tab's child coordinator, if any.
+    @discardableResult
+    func select<T: Coordinatable>(
+        index: Int,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = tabItems.select(index),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Selects a tab by identifier and invokes a typed callback with the
+    /// tab's child coordinator, if any.
+    @discardableResult
+    func select<T: Coordinatable>(
+        id: UUID,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        if let dest = tabItems.select(id),
+           let coordinator = dest.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Appends a tab and invokes a typed callback with the new tab's
+    /// child coordinator, if any.
+    @discardableResult
+    func appendTab<T: Coordinatable>(
+        _ tab: Destinations,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        let resolved = tab.value(for: self)
+        resolved.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinatable)
+        resolved.coordinatable?.setParent(self)
+
+        let appended = tabItems.appendTab(resolved)
+        if let coordinator = appended.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+
+    /// Inserts a tab at the given index and invokes a typed callback with
+    /// the new tab's child coordinator, if any.
+    @discardableResult
+    func insertTab<T: Coordinatable>(
+        _ tab: Destinations,
+        at index: Int,
+        _ action: @escaping @MainActor (T) -> Void
+    ) -> Self {
+        let resolved = tab.value(for: self)
+        resolved.coordinatable?.setHasLayerNavigationCoordinatable(self.hasLayerNavigationCoordinatable)
+        resolved.coordinatable?.setParent(self)
+
+        let inserted = tabItems.insertTab(resolved, at: index)
+        if let coordinator = inserted.coordinatable as? T {
+            action(coordinator)
+        }
+        return self
+    }
+}
+
+@available(iOS 18, macOS 15, *)
+@MainActor
+public extension TabCoordinatable {
+    /// Presents a destination modally on this tab coordinator.
+    ///
+    /// The modal lives on this coordinator's container and is rendered
+    /// as a sheet or full-screen cover above the `TabView`.
+    ///
+    /// - Parameters:
+    ///   - destination: The destination to present.
+    ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - onDismiss: A closure invoked when the modal is dismissed.
+    /// - Returns: `self` for chaining.
+    @discardableResult
+    func present(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        onDismiss: @escaping @MainActor () -> Void = { }
+    ) -> Self {
+        var dest = destination.value(for: self)
+        dest.setOnDismiss(onDismiss)
+        dest.setPushType(type.presentationType)
+        dest.setRouteType(DestinationType.from(presentationType: type.presentationType))
+        dest.coordinatable?.setHasLayerNavigationCoordinatable(false)
+        dest.coordinatable?.setParent(self)
+
+        if let flowCoordinator = dest.coordinatable as? any FlowCoordinatable {
+            flowCoordinator.setPresentedAs(type.presentationType)
+        } else if let tabCoordinator = dest.coordinatable as? any TabCoordinatable {
+            tabCoordinator.setPresentedAs(type.presentationType)
+        } else if let rootCoordinator = dest.coordinatable as? any RootCoordinatable {
+            rootCoordinator.setPresentedAs(type.presentationType)
+        }
+
+        anyTabItems.modals.append(dest)
+        return self
+    }
+}
+
+@available(iOS 18, macOS 15, *)
 public extension TabCoordinatable {
     func setPresentedAs(_ type: PresentationType) {
         anyTabItems.presentedAs = type
@@ -358,9 +364,9 @@ public extension TabCoordinatable {
 
 /// The SwiftUI view generated by a ``TabCoordinatable`` coordinator.
 ///
-/// You never create this view directly — call ``Coordinatable/view()``
+/// You never create this view directly — access ``Coordinatable/view``
 /// on a `TabCoordinatable` coordinator to obtain it.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 public struct TabCoordinatableView: CoordinatableView {
     private let _coordinator: any TabCoordinatable
 
@@ -415,11 +421,23 @@ public struct TabCoordinatableView: CoordinatableView {
         }
     }
 
+    private func modals(of type: ModalPresentationType) -> [Destination] {
+        let target = type.presentationType
+        return _coordinator.anyTabItems.modals.filter { $0.pushType == target }
+    }
+
     public var body: some View {
         _coordinator.customize(
             AnyView(
                 flowCoordinatableView()
             )
+        )
+        .applyContainerModals(
+            sheets: modals(of: .sheet),
+            fullScreenCovers: modals(of: .fullScreenCover),
+            onDismissSheet: { id in (_coordinator as any Coordinatable).removeContainerModal(id: id, type: .sheet) },
+            onDismissFullScreenCover: { id in (_coordinator as any Coordinatable).removeContainerModal(id: id, type: .fullScreenCover) },
+            modalContent: wrappedView
         )
         .environmentCoordinatable(coordinator)
         .id(_coordinator.anyTabItems.id)

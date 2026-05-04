@@ -10,17 +10,17 @@ import SwiftUI
 /// A type that uniquely identifies a destination case without its
 /// associated values.
 ///
-/// The ``Scaffoldable()`` macro generates a conforming `Meta` enum
+/// The ``Scaffoldable(injectsCoordinator:)`` macro generates a conforming `Meta` enum
 /// alongside the `Destinations` enum. You can use meta values with
 /// methods like ``FlowCoordinatable/popToFirst(_:)`` or
 /// ``TabCoordinatable/selectFirstTab(_:)`` to navigate by case name.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol DestinationMeta: Equatable { }
 
 /// Describes how a destination is displayed within a coordinator's
 /// navigation hierarchy.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public enum DestinationType {
     /// The destination is the root of the coordinator.
@@ -52,12 +52,15 @@ public enum DestinationType {
     }
 }
 
-/// The presentation style used when routing to a destination.
+/// The presentation style used internally to track how a destination
+/// is displayed.
 ///
-/// Pass a `PresentationType` to ``FlowCoordinatable/route(to:as:onDismiss:)``
-/// to control whether the destination is pushed, shown as a sheet, or
-/// displayed as a full-screen cover.
-@available(iOS 17, macOS 14, *)
+/// Routing splits cleanly into push and modal presentation:
+/// ``FlowCoordinatable/route(to:onDismiss:)`` always pushes onto the
+/// navigation stack, while ``FlowCoordinatable/present(_:as:onDismiss:)``
+/// shows a destination as a sheet or full-screen cover. Use
+/// ``ModalPresentationType`` at the call site.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public enum PresentationType {
     /// Push the destination onto the navigation stack.
@@ -68,16 +71,38 @@ public enum PresentationType {
     case fullScreenCover
 }
 
-// MARK: - Environment Key
+/// The modal presentation style accepted by
+/// ``FlowCoordinatable/present(_:as:onDismiss:)``.
+///
+/// Modal presentation is restricted to sheet or full-screen cover —
+/// pushes are expressed exclusively through
+/// ``FlowCoordinatable/route(to:onDismiss:)``.
+@available(iOS 18, macOS 15, *)
+@MainActor
+public enum ModalPresentationType {
+    /// Present the destination as a sheet.
+    case sheet
+    /// Present the destination as a full-screen cover.
+    case fullScreenCover
+
+    var presentationType: PresentationType {
+        switch self {
+        case .sheet: return .sheet
+        case .fullScreenCover: return .fullScreenCover
+        }
+    }
+}
 
 // MARK: - Environment Key
 
-@available(iOS 17, macOS 14, *)
+// MARK: - Environment Key
+
+@available(iOS 18, macOS 15, *)
 private struct DestinationEnvironmentKey: @MainActor EnvironmentKey {
     @MainActor static let defaultValue: Destination = .dummy
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 public extension EnvironmentValues {
     /// The ``Destination`` for the current view in the coordinator hierarchy.
     ///
@@ -97,9 +122,28 @@ public extension EnvironmentValues {
 /// `Destinations` enum produces them via its ``Destinationable/value(for:)``
 /// method. Coordinators consume destinations internally when pushing,
 /// presenting, or switching roots.
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 public struct Destination: Identifiable {
+    /// Mutable state shared by every value-copy of a destination.
+    ///
+    /// Holds the user-facing `onDismiss` callback and a single-shot
+    /// guard so dismissal fires exactly once even if the destination
+    /// is removed through multiple paths (e.g. user-swipe + programmatic
+    /// `pop`).
+    @MainActor
+    final class ResolutionState {
+        var onDismiss: (@MainActor () -> Void)?
+        var didResolve: Bool = false
+
+        func resolve() {
+            guard !didResolve else { return }
+            didResolve = true
+            onDismiss?()
+            onDismiss = nil
+        }
+    }
+
     @MainActor
     class CoordinatableCache {
         private let coordinatableFactory: () -> any Coordinatable
@@ -160,6 +204,9 @@ public struct Destination: Identifiable {
     /// A stable identifier for this destination instance.
     public var id: UUID = .init()
 
+    private let _resolution = ResolutionState()
+    var resolution: ResolutionState { _resolution }
+
     private var _view: AnyView?
     private var _tabItem: AnyView?
     var _coordinatable: CoordinatableCache?
@@ -197,7 +244,13 @@ public struct Destination: Identifiable {
     public let meta: any DestinationMeta
     var parent: any Coordinatable
 
-    var onDismiss: (() -> Void)?
+    /// The user-facing dismissal callback, stored on the shared
+    /// resolution state so a value-copy of the destination still
+    /// reflects updates made to the original.
+    var onDismiss: (() -> Void)? {
+        guard let cb = _resolution.onDismiss else { return nil }
+        return { cb() }
+    }
 
     var coordinatable: (any Coordinatable)? {
         return _coordinatable?.coordinatable
@@ -339,8 +392,12 @@ public struct Destination: Identifiable {
 
     // MARK: - Mutating Methods
 
-    mutating func setOnDismiss(_ value: @escaping () -> Void) {
-        onDismiss = value
+    /// Stores the dismissal callback on the shared resolution state.
+    ///
+    /// Non-mutating: writes to a reference-typed slot, so value-copies of
+    /// the destination observe the same callback.
+    func setOnDismiss(_ value: @escaping @MainActor () -> Void) {
+        _resolution.onDismiss = value
     }
 
     mutating func setPushType(_ value: PresentationType) {
@@ -350,9 +407,18 @@ public struct Destination: Identifiable {
     mutating func setRouteType(_ value: DestinationType) {
         routeType = value
     }
+
+    // MARK: - Resolution
+
+    /// Fires the destination's `onDismiss` callback exactly once.
+    /// Called from every removal site: pop, popToRoot, popToFirst/Last,
+    /// setRoot, dismissCoordinator, removeModalDestination, sheet swipe.
+    func resolveDismissal() {
+        _resolution.resolve()
+    }
 }
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension Destination: @MainActor Equatable, @MainActor Hashable {
     public static func ==(lhs: Destination, rhs: Destination) -> Bool {

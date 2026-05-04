@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-@available(iOS 17, macOS 14, *)
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension View {
     func applySheets<ModalContent: View>(
@@ -23,8 +23,9 @@ extension View {
                 },
                 set: { newValue in
                     if newValue == nil, let currentSheet = sheetDestinations.first {
+                        // removeModalDestination invokes the destination's
+                        // resolution (continuation + onDismiss) exactly once.
                         coordinator.removeModalDestination(withId: currentSheet.id, type: .sheet)
-                        currentSheet.onDismiss?()
                     }
                 }
             )
@@ -50,8 +51,9 @@ extension View {
                 },
                 set: { newValue in
                     if newValue == nil, let currentCover = coverDestinations.first {
+                        // removeModalDestination invokes the destination's
+                        // resolution (continuation + onDismiss) exactly once.
                         coordinator.removeModalDestination(withId: currentCover.id, type: .fullScreenCover)
-                        currentCover.onDismiss?()
                     }
                 }
             )
