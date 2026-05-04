@@ -10,6 +10,7 @@ import Observation
 
 /// A type-erased protocol for ``Root`` that allows the framework to
 /// manipulate root state without knowing the concrete coordinator type.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoordinatable {
     /// The current root destination.
@@ -31,6 +32,7 @@ public protocol AnyRoot: AnyObject, CoordinatableData where Coordinator: RootCoo
 /// ```swift
 /// var root = Root<AppCoordinator>(root: .login)
 /// ```
+@available(iOS 18, macOS 15, *)
 @MainActor
 @Observable
 public class Root<Coordinator: RootCoordinatable>: AnyRoot {
@@ -97,6 +99,7 @@ public class Root<Coordinator: RootCoordinatable>: AnyRoot {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 extension Root {
     func setRoot(root: Destination, animation: Animation?) {
         withAnimation(animation ?? self.animation) {

@@ -26,6 +26,7 @@ import Observation
 ///     func settings() -> some View { SettingsView() }
 /// }
 /// ```
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol TabCoordinatable: Coordinatable where ViewType == TabCoordinatableView {
     /// The observable container that holds this coordinator's tab
@@ -36,6 +37,7 @@ public protocol TabCoordinatable: Coordinatable where ViewType == TabCoordinatab
     var anyTabItems: any AnyTabItems { get }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     var _dataId: ObjectIdentifier {
@@ -77,6 +79,7 @@ public extension TabCoordinatable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension TabCoordinatable {
     var selectedTabBinding: Binding<UUID?> {
@@ -87,6 +90,7 @@ extension TabCoordinatable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     /// Selects the **first** tab matching the given destination.
@@ -210,6 +214,7 @@ public extension TabCoordinatable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     /// Selects the **first** tab matching the given destination and
@@ -306,6 +311,7 @@ public extension TabCoordinatable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension TabCoordinatable {
     /// Presents a destination modally on this tab coordinator.
@@ -344,6 +350,7 @@ public extension TabCoordinatable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 public extension TabCoordinatable {
     func setPresentedAs(_ type: PresentationType) {
         anyTabItems.presentedAs = type
@@ -359,6 +366,7 @@ public extension TabCoordinatable {
 ///
 /// You never create this view directly — access ``Coordinatable/view``
 /// on a `TabCoordinatable` coordinator to obtain it.
+@available(iOS 18, macOS 15, *)
 public struct TabCoordinatableView: CoordinatableView {
     private let _coordinator: any TabCoordinatable
 

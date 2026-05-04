@@ -14,11 +14,13 @@ import SwiftUI
 /// alongside the `Destinations` enum. You can use meta values with
 /// methods like ``FlowCoordinatable/popToFirst(_:)`` or
 /// ``TabCoordinatable/selectFirstTab(_:)`` to navigate by case name.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol DestinationMeta: Equatable { }
 
 /// Describes how a destination is displayed within a coordinator's
 /// navigation hierarchy.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public enum DestinationType {
     /// The destination is the root of the coordinator.
@@ -58,6 +60,7 @@ public enum DestinationType {
 /// navigation stack, while ``FlowCoordinatable/present(_:as:onDismiss:)``
 /// shows a destination as a sheet or full-screen cover. Use
 /// ``ModalPresentationType`` at the call site.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public enum PresentationType {
     /// Push the destination onto the navigation stack.
@@ -74,6 +77,7 @@ public enum PresentationType {
 /// Modal presentation is restricted to sheet or full-screen cover —
 /// pushes are expressed exclusively through
 /// ``FlowCoordinatable/route(to:onDismiss:)``.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public enum ModalPresentationType {
     /// Present the destination as a sheet.
@@ -93,10 +97,12 @@ public enum ModalPresentationType {
 
 // MARK: - Environment Key
 
+@available(iOS 18, macOS 15, *)
 private struct DestinationEnvironmentKey: @MainActor EnvironmentKey {
     @MainActor static let defaultValue: Destination = .dummy
 }
 
+@available(iOS 18, macOS 15, *)
 public extension EnvironmentValues {
     /// The ``Destination`` for the current view in the coordinator hierarchy.
     ///
@@ -116,6 +122,7 @@ public extension EnvironmentValues {
 /// `Destinations` enum produces them via its ``Destinationable/value(for:)``
 /// method. Coordinators consume destinations internally when pushing,
 /// presenting, or switching roots.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public struct Destination: Identifiable {
     /// Mutable state shared by every value-copy of a destination.
@@ -411,6 +418,7 @@ public struct Destination: Identifiable {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension Destination: @MainActor Equatable, @MainActor Hashable {
     public static func ==(lhs: Destination, rhs: Destination) -> Bool {

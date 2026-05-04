@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension View {
     func applySheets<ModalContent: View>(

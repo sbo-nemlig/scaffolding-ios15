@@ -10,6 +10,7 @@ import Observation
 
 /// A type-erased protocol for ``TabItems`` that allows the framework to
 /// manipulate tab state without knowing the concrete coordinator type.
+@available(iOS 18, macOS 15, *)
 @MainActor
 public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: TabCoordinatable {
     /// The resolved tab destinations.
@@ -35,6 +36,7 @@ public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: Tab
 ///     tabs: [.home, .profile, .settings]
 /// )
 /// ```
+@available(iOS 18, macOS 15, *)
 @MainActor
 @Observable
 public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
@@ -150,6 +152,7 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 extension TabItems {
     func select(first tab: Coordinator.Destinations.Meta) -> Destination? {
         guard isSetup else {

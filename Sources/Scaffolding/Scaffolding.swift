@@ -28,6 +28,7 @@
 /// automatic environment injection — useful when a screen should not see
 /// the coordinator that owns it (for example, a reusable view that
 /// shouldn't bind to a specific flow).
+@available(iOS 18, macOS 15, *)
 @attached(member, names: named(Destinations), named(_injectsCoordinator))
 public macro Scaffoldable(injectsCoordinator: Bool = true) = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldableMacro")
 
@@ -37,6 +38,7 @@ public macro Scaffoldable(injectsCoordinator: Bool = true) = #externalMacro(modu
 /// `@ScaffoldingTracked` when you want to be explicit about which functions
 /// participate in code generation — functions without the attribute are then
 /// excluded.
+@available(iOS 18, macOS 15, *)
 @attached(peer)
 public macro ScaffoldingTracked() = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingTrackedMacro")
 
@@ -49,5 +51,6 @@ public macro ScaffoldingTracked() = #externalMacro(module: "ScaffoldingMacros", 
 /// @ScaffoldingIgnored
 /// func helperView() -> some View { Text("Not a destination") }
 /// ```
+@available(iOS 18, macOS 15, *)
 @attached(peer)
 public macro ScaffoldingIgnored() = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingIgnoredMacro")

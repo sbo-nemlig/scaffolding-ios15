@@ -13,6 +13,7 @@ import Observation
 // MARK: - Helpers
 
 /// Walks the parent chain from a coordinatable and collects all ancestors.
+@available(iOS 18, macOS 15, *)
 @MainActor
 func collectAncestors(from coordinatable: any Coordinatable) -> [any Coordinatable] {
     var result: [any Coordinatable] = []
@@ -25,6 +26,7 @@ func collectAncestors(from coordinatable: any Coordinatable) -> [any Coordinatab
 }
 
 /// Checks if a specific coordinator is reachable via the parent chain.
+@available(iOS 18, macOS 15, *)
 @MainActor
 func canFindAncestor<T: Coordinatable>(ofType _: T.Type, from coordinatable: any Coordinatable) -> Bool {
     var current = coordinatable.parent
@@ -36,6 +38,7 @@ func canFindAncestor<T: Coordinatable>(ofType _: T.Type, from coordinatable: any
 }
 
 /// Returns a specific ancestor by type, or nil.
+@available(iOS 18, macOS 15, *)
 @MainActor
 func findAncestor<T: Coordinatable>(ofType _: T.Type, from coordinatable: any Coordinatable) -> T? {
     var current = coordinatable.parent
@@ -48,6 +51,7 @@ func findAncestor<T: Coordinatable>(ofType _: T.Type, from coordinatable: any Co
 
 // MARK: - LeafFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class LeafFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<LeafFlowCoordinator>
@@ -83,6 +87,7 @@ final class LeafFlowCoordinator: FlowCoordinatable {
 
 // MARK: - DetailFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class DetailFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<DetailFlowCoordinator>
@@ -124,6 +129,7 @@ final class DetailFlowCoordinator: FlowCoordinatable {
 
 // MARK: - HomeFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class HomeFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<HomeFlowCoordinator>
@@ -177,6 +183,7 @@ final class HomeFlowCoordinator: FlowCoordinatable {
 
 // MARK: - ProfileFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class ProfileFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<ProfileFlowCoordinator>
@@ -212,6 +219,7 @@ final class ProfileFlowCoordinator: FlowCoordinatable {
 
 // MARK: - SettingsFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class SettingsFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<SettingsFlowCoordinator>
@@ -247,6 +255,7 @@ final class SettingsFlowCoordinator: FlowCoordinatable {
 
 // MARK: - MainTabCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class MainTabCoordinator: TabCoordinatable {
     var tabItems: TabItems<MainTabCoordinator>
@@ -294,6 +303,7 @@ final class MainTabCoordinator: TabCoordinatable {
 
 // MARK: - LoginFlowCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class LoginFlowCoordinator: FlowCoordinatable {
     var stack: FlowStack<LoginFlowCoordinator>
@@ -329,6 +339,7 @@ final class LoginFlowCoordinator: FlowCoordinatable {
 
 // MARK: - AppRootCoordinator
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class AppRootCoordinator: RootCoordinatable {
     var root: Root<AppRootCoordinator>
@@ -370,6 +381,7 @@ final class AppRootCoordinator: RootCoordinatable {
 
 // MARK: - NestedRootCoordinator (Root inside Root)
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class InnerRootCoordinator: RootCoordinatable {
     var root: Root<InnerRootCoordinator>
@@ -405,6 +417,7 @@ final class InnerRootCoordinator: RootCoordinatable {
 
 // MARK: - OuterRootCoordinator (Root wrapping another Root)
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class OuterRootCoordinator: RootCoordinatable {
     var root: Root<OuterRootCoordinator>
@@ -440,6 +453,7 @@ final class OuterRootCoordinator: RootCoordinatable {
 
 // MARK: - FlowWithCoordinatorRoot (FlowStack whose root is a coordinator, not a view)
 
+@available(iOS 18, macOS 15, *)
 @MainActor @Observable
 final class FlowWithCoordinatorRootCoordinator: FlowCoordinatable {
     var stack: FlowStack<FlowWithCoordinatorRootCoordinator>

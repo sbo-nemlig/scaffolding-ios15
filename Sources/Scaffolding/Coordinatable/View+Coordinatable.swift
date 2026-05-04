@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 extension View {
     /// Applies a sheet + full-screen cover to a host coordinator that
@@ -53,6 +54,7 @@ extension View {
     }
 }
 
+@available(iOS 18, macOS 15, *)
 @MainActor
 public extension View {
     func environmentCoordinatable(_ object: Any) -> AnyView {
