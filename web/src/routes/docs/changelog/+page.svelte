@@ -3,129 +3,31 @@
   import CodeBlock from '$lib/CodeBlock.svelte';
   import ScrollProgress from '$lib/ScrollProgress.svelte';
   import { GITHUB_URL } from '$lib/links.js';
+  import {
+    CODE_VIEW_BEFORE,
+    CODE_VIEW_AFTER,
+    CODE_ROUTE_BEFORE,
+    CODE_ROUTE_AFTER,
+    CODE_PRESENT_HOSTS,
+    CODE_PRESENT_TYPED,
+    CODE_CALLBACK_BEFORE,
+    CODE_CALLBACK_AFTER,
+    CODE_MACRO_INJECT,
+    MIGRATION
+  } from '$lib/code/changelog.js';
 
   const SECTIONS = [
-    { id: 'highlights', label: 'Highlights' },
-    { id: 'view',       label: 'view property' },
-    { id: 'route',      label: 'route / present split' },
-    { id: 'present',    label: 'present everywhere' },
-    { id: 'callbacks',  label: 'Deep-link overloads' },
-    { id: 'macro',      label: 'Macro options' },
-    { id: 'fixes',      label: 'Fixes' },
-    { id: 'compat',     label: 'Compatibility' },
-    { id: 'migration',  label: 'Migration checklist' }
-  ];
-
-  // ── Side-by-side migration snippets ─────────────────────────────────
-
-  const CODE_VIEW_BEFORE = `// 2.x
-@main
-struct MyApp: App {
-    @State private var coordinator = AppCoordinator()
-
-    var body: some Scene {
-        WindowGroup {
-            coordinator.view()      // function call
-        }
-    }
-}`;
-
-  const CODE_VIEW_AFTER = `// 3.0
-@main
-struct MyApp: App {
-    @State private var coordinator = AppCoordinator()
-
-    var body: some Scene {
-        WindowGroup {
-            coordinator.view        // computed property — no parens
-        }
-    }
-}`;
-
-  const CODE_ROUTE_BEFORE = `// 2.x — one route() did everything.
-coordinator.route(to: .detail(item: planet))           // push (default)
-coordinator.route(to: .settings, as: .sheet)           // sheet
-coordinator.route(to: .login,    as: .fullScreenCover) // full-screen cover`;
-
-  const CODE_ROUTE_AFTER = `// 3.0 — push and present are explicitly different calls.
-coordinator.route(to: .detail(item: planet))           // push only
-coordinator.present(.settings, as: .sheet)             // sheet
-coordinator.present(.login,    as: .fullScreenCover)   // full-screen cover
-
-// route(to:) no longer takes \`as:\` — pushes are the only thing it does.
-// present(_:as:) accepts ModalPresentationType (sheet / fullScreenCover)
-// at the call site; push is not a valid modal style by definition.`;
-
-  const CODE_PRESENT_HOSTS = `// 3.0 — present(_:as:) is now available on every coordinator type.
-
-@Scaffoldable @Observable
-final class MainTabCoordinator: @MainActor TabCoordinatable {
-    var tabItems = TabItems<MainTabCoordinator>(tabs: [.feed, .profile])
-
-    func feed()    -> (any Coordinatable, some View) { /* … */ }
-    func profile() -> (any Coordinatable, some View) { /* … */ }
-
-    func upgrade() -> any Coordinatable { UpgradeCoordinator() }
-
-    func showUpgrade() {
-        present(.upgrade, as: .sheet)   // tab coordinator hosts the sheet
-    }
-}`;
-
-  const CODE_CALLBACK_BEFORE = `// 2.x — \`<T>\` was unconstrained, the closure was labelled \`value:\`,
-// and \`route\` carried the \`as:\` parameter that's now on \`present\`.
-appCoordinator.setRoot(.authenticated, value: { (tab: MainTabCoordinator) in
-    tab.selectFirstTab(.profile, value: { (profile: ProfileCoordinator) in
-        profile.route(to: .userDetail(id: 123), as: .push)
-    })
-})`;
-
-  const CODE_CALLBACK_AFTER = `// 3.0 — \`T\` is constrained to Coordinatable, the closure trails
-// without a label, and \`route\` no longer takes \`as:\`. Same pattern,
-// tighter signature.
-appCoordinator.setRoot(.authenticated) { (tab: MainTabCoordinator) in
-    tab.selectFirstTab(.profile) { (profile: ProfileCoordinator) in
-        profile.route(to: .userDetail(id: 123))
-    }
-}`;
-
-  const CODE_MACRO_INJECT = `// 3.0 — opt this coordinator out of automatic environment injection.
-@Scaffoldable(injectsCoordinator: false) @Observable
-final class ReusableCoordinator: @MainActor FlowCoordinatable {
-    var stack = FlowStack<ReusableCoordinator>(root: .home)
-    func home() -> some View { ReusableHomeView() }
-}`;
-
-  // Migration checklist items — keep terse.
-  const MIGRATION = [
-    {
-      tag: 'Required',
-      body: `Replace every <code>coordinator.view()</code> call with the property access <code>coordinator.view</code> (drop the parens).`
-    },
-    {
-      tag: 'Required',
-      body: `Replace <code>route(to: x, as: .sheet)</code> / <code>.fullScreenCover</code> with <code>present(x, as: .sheet)</code> / <code>.fullScreenCover</code>. Keep <code>route(to: x)</code> for pushes; the <code>as:</code> argument no longer exists on <code>route</code>.`
-    },
-    {
-      tag: 'Required',
-      body: `Re-spell the deep-link <code>&lt;T&gt;</code> overloads. Drop the <code>value:</code> label (the closure is now an unlabelled trailing closure), make sure the typed parameter is a <code>Coordinatable</code> (view-typed <code>T</code>s don't compile any more), and remove the <code>as:</code> argument from <code>route</code>. The overload still exists everywhere it did before; <code>present(_:as:)</code> never had a typed variant and still doesn't.`
-    },
-    {
-      tag: 'Compiler',
-      body: `<code>onDismiss</code> and the deep-link trailing closures are now <code>@MainActor</code>-typed. If you stored or forwarded one as a plain <code>() -&gt; Void</code> / <code>(T) -&gt; Void</code>, update the type or annotate the closure.`
-    },
-    {
-      tag: 'Platform',
-      body: `Bump the consuming app's deployment target to iOS 18 / macOS 15 (and tvOS 18 / watchOS 11 / macCatalyst 18 if you ship those). The package no longer links against the old floors.`
-    },
-    {
-      tag: 'Optional',
-      body: `If you have coordinators whose views shouldn't see them in the environment, opt out with <code>@Scaffoldable(injectsCoordinator: false)</code>.`
-    },
-    {
-      tag: 'Optional',
-      body: `Modal hosting can be moved up the tree where it makes sense — <code>present(_:as:)</code> now works on <code>TabCoordinatable</code> and <code>RootCoordinatable</code> directly, so you no longer have to delegate every modal to a child flow.`
-    }
+    { id: 'three-one',   label: '3.1.0' },
+    { id: 'three-zero',  label: '3.0' },
+    { id: 'highlights',  label: 'Highlights' },
+    { id: 'view',        label: 'view property' },
+    { id: 'route',       label: 'route / present split' },
+    { id: 'present',     label: 'present everywhere' },
+    { id: 'callbacks',   label: 'Deep-link overloads' },
+    { id: 'macro',       label: 'Macro options' },
+    { id: 'fixes',       label: 'Fixes' },
+    { id: 'compat',      label: 'Compatibility' },
+    { id: 'migration',   label: 'Migration checklist' }
   ];
 </script>
 
@@ -134,20 +36,56 @@ final class ReusableCoordinator: @MainActor FlowCoordinatable {
 <main class="docs">
   <article class="article">
     <header class="hero">
-      <p class="eyebrow">Changelog · 2.x → 3.0</p>
-      <h1>Scaffolding 3.0.</h1>
+      <p class="eyebrow">Changelog · latest 3.1.0</p>
+      <h1>Scaffolding 3.1.0.</h1>
       <p class="lede">
-        A focused breaking release. Push and modal presentation are now
-        separate APIs, <code>view</code> becomes a property, the
-        generic value-callback overloads are gone, and a long list of
-        navigation-state bugs got fixed.
+        A small additive minor release. <code>present(_:as:)</code> gains
+        a typed <code>{'<T: Coordinatable>'}</code> overload that mirrors
+        the existing deep-link callbacks — so every navigation method
+        that resolves a child now hands you a typed reference once the
+        route lands.
       </p>
       <p class="meta">
         Source on <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>.
         Compare with the <a href={`${base}/docs`}>library overview</a>
         and the <a href={`${base}/docs/api`}>API reference</a>.
+        Looking for the 2.x → 3.0 migration? <a href="#three-zero">Skip down</a>.
       </p>
     </header>
+
+    <section id="three-one" class="sec">
+      <h2>What's new in 3.1.0</h2>
+      <ul class="highlights">
+        <li>
+          <span class="hl-tag new">New</span>
+          <span class="hl-body">
+            <code>present(_:as:onDismiss:)</code> ships a
+            <code>{'<T: Coordinatable>'}</code> overload on every
+            coordinator type. The trailing closure receives the
+            freshly-presented child, ready to seed before SwiftUI
+            commits the sheet or full-screen cover.
+          </span>
+        </li>
+      </ul>
+      <CodeBlock code={CODE_PRESENT_TYPED} label="HomeCoordinator · openSubscriptionAt" />
+      <p class="sub">
+        Same shape as <code>route(to:_:)</code> /
+        <code>setRoot(_:_:)</code> — the cast only fires when the
+        resolved destination matches <code>T</code>, so pick the
+        concrete coordinator type returned by the route.
+      </p>
+    </section>
+
+    <section id="three-zero" class="sec">
+      <h2>Earlier — Scaffolding 3.0</h2>
+      <p>
+        A focused breaking release. Push and modal presentation are now
+        separate APIs, <code>view</code> becomes a property, the
+        generic value-callback overloads are gone, and a long list of
+        navigation-state bugs got fixed. The migration checklist below
+        applies to 2.x → 3.0; 3.0 → 3.1.0 is source-compatible.
+      </p>
+    </section>
 
     <section id="highlights" class="sec">
       <h2>Highlights</h2>
@@ -293,14 +231,13 @@ final class ReusableCoordinator: @MainActor FlowCoordinatable {
       <h2>Deep-link overloads tightened</h2>
       <p>
         Every navigation method that resolves a child coordinator
-        (<code>route</code>, <code>setRoot</code>,
+        (<code>route</code>, <code>present</code>, <code>setRoot</code>,
         <code>appendTab</code>, <code>insertTab</code>,
         <code>popToFirst</code>, <code>popToLast</code>,
         <code>selectFirstTab</code>, <code>selectLastTab</code>,
         <code>select(index:)</code>, <code>select(id:)</code>) ships
         a <code>{'<T: Coordinatable>'}</code> overload that hands you
         a typed reference to the resolved child once the route lands.
-        (<code>present(_:as:)</code> has no typed overload.)
         That's the building block for <a href={`${base}/docs#deep-link`}>deep linking</a>:
         you walk the tree by chaining one overload per layer.
       </p>
@@ -454,115 +391,7 @@ final class ReusableCoordinator: @MainActor FlowCoordinatable {
 </main>
 
 <style>
-  .docs {
-    position: relative;
-    z-index: 1;
-    padding: clamp(3rem, 8vw, 5rem) 0 clamp(3rem, 6vw, 4rem);
-  }
-
-  .article {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 0 clamp(1.25rem, 3.5vw, 2rem);
-  }
-
-  .hero {
-    border-bottom: 1px solid var(--line-soft);
-    padding-bottom: clamp(2rem, 5vw, 3rem);
-    margin-bottom: clamp(2rem, 5vw, 3rem);
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .eyebrow {
-    margin: 0;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .hero h1 {
-    margin: 0;
-    font-family: var(--font-mono);
-    font-size: clamp(2rem, 5vw, 3rem);
-    font-weight: 500;
-    line-height: 1.05;
-    letter-spacing: -0.025em;
-    color: var(--fg);
-  }
-  .lede {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.65;
-    color: color-mix(in srgb, var(--fg) 75%, transparent);
-    max-width: 60ch;
-  }
-  .meta {
-    margin: 0.25rem 0 0;
-    font-size: 12.5px;
-    color: var(--muted);
-  }
-  .meta a, .next a {
-    color: var(--fg);
-    text-decoration: none;
-    border-bottom: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
-    transition: border-color 140ms ease;
-  }
-  .meta a:hover, .next a:hover { border-bottom-color: var(--fg); }
-
-  .sec {
-    margin: 0 0 clamp(4rem, 8vw, 6rem);
-    padding-top: clamp(2.5rem, 5vw, 4rem);
-    border-top: 1px solid var(--line-soft);
-    scroll-margin-top: 5rem;
-  }
-  .sec:first-of-type {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
-
-  .sec h2 {
-    margin: 0 0 1rem;
-    font-family: var(--font-mono);
-    font-size: clamp(1.2rem, 2.4vw, 1.55rem);
-    font-weight: 500;
-    letter-spacing: -0.015em;
-    color: var(--fg);
-  }
-  .sec h2 code {
-    font-family: var(--font-mono);
-    font-size: 0.92em;
-    background: var(--surface-2);
-    border: 1px solid var(--line-soft);
-    padding: 0.05em 0.4em;
-    border-radius: 3px;
-  }
-
-  .sec p {
-    margin: 0 0 1rem;
-    font-size: 14px;
-    line-height: 1.7;
-    color: color-mix(in srgb, var(--fg) 78%, transparent);
-  }
-  .sec p.sub {
-    color: color-mix(in srgb, var(--fg) 60%, transparent);
-    font-size: 13.5px;
-  }
-  .sec p strong { color: var(--fg); font-weight: 500; }
-
-  .sec code, .lede code, .meta code {
-    font-family: var(--font-mono);
-    font-size: 0.92em;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--line-soft);
-    padding: 0.05em 0.4em;
-    border-radius: 3px;
-  }
-  .sec :global(.block) {
-    margin: 0.85rem 0 1rem;
-  }
+  /* Shared docs chrome lives in `$lib/styles/docs.css`. */
 
   /* ── Highlights list ──────────────────────────────────────────────── */
 
@@ -613,41 +442,6 @@ final class ReusableCoordinator: @MainActor FlowCoordinatable {
     color: color-mix(in srgb, var(--fg) 80%, transparent);
   }
   .hl-body code {
-    font-family: var(--font-mono);
-    font-size: 0.92em;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--line-soft);
-    padding: 0.05em 0.35em;
-    border-radius: 3px;
-  }
-
-  /* ── Plain bullets ────────────────────────────────────────────────── */
-
-  .bullets {
-    margin: 0 0 1rem;
-    padding: 0 0 0 1.1rem;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .bullets li {
-    position: relative;
-    font-size: 13.5px;
-    line-height: 1.65;
-    color: color-mix(in srgb, var(--fg) 78%, transparent);
-  }
-  .bullets li::before {
-    content: '·';
-    position: absolute;
-    left: -1.1rem;
-    top: 0;
-    color: var(--muted);
-    font-family: var(--font-mono);
-  }
-  .bullets li strong { color: var(--fg); font-weight: 500; }
-  .bullets li code {
     font-family: var(--font-mono);
     font-size: 0.92em;
     color: var(--fg);
@@ -719,57 +513,4 @@ final class ReusableCoordinator: @MainActor FlowCoordinatable {
     border-radius: 3px;
   }
 
-  /* ── Table ────────────────────────────────────────────────────────── */
-
-  .table-wrap {
-    margin: 0.75rem 0 1rem;
-    overflow-x: auto;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12.5px;
-    font-family: var(--font-mono);
-  }
-  thead th {
-    font-size: 10.5px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--dim);
-    text-align: left;
-    padding: 0.65rem 0.85rem;
-    background: color-mix(in srgb, var(--fg) 4%, transparent);
-    border-bottom: 1px solid var(--line);
-    font-weight: 500;
-  }
-  tbody td {
-    padding: 0.65rem 0.85rem;
-    border-bottom: 1px solid var(--line-soft);
-    color: color-mix(in srgb, var(--fg) 80%, transparent);
-    vertical-align: top;
-  }
-  tbody tr:last-child td { border-bottom: 0; }
-
-  /* ── Footer ───────────────────────────────────────────────────────── */
-
-  .next {
-    margin-top: clamp(2rem, 5vw, 3rem);
-    padding-top: clamp(2rem, 5vw, 3rem);
-    border-top: 1px solid var(--line-soft);
-  }
-  .next h2 {
-    margin: 0 0 0.75rem;
-    font-family: var(--font-mono);
-    font-size: clamp(1.05rem, 1.8vw, 1.25rem);
-    font-weight: 500;
-    color: var(--fg);
-  }
-  .next p {
-    margin: 0 0 0.75rem;
-    font-size: 14px;
-    line-height: 1.7;
-    color: color-mix(in srgb, var(--fg) 78%, transparent);
-  }
 </style>
