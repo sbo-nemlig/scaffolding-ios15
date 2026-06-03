@@ -454,32 +454,49 @@ public struct TabCoordinatableView: CoordinatableView {
     private func flowCoordinatableViewiOS18() -> some View {
         TabView(selection: _coordinator.selectedTabBinding) {
             ForEach(_coordinator.anyTabItems.tabs) { tab in
-                Tab(value: tab.id, role: tab.tabRole) {
-                    wrappedView(tab)
-                        .environmentCoordinatable(_coordinator)
-#if os(iOS)
-                        .toolbar(_coordinator.anyTabItems.tabBarVisibility, for: .tabBar)
-#endif
-                } label: {
-                    if let tabItem = tab.tabItem {
-                        AnyView(tabItem)
+                if let badge = _coordinator.anyTabItems.badge(for: tab.id) {
+                    Tab(value: tab.id, role: tab.tabRole) {
+                        tabContent(tab)
+                    } label: {
+                        tabLabel(tab)
+                    }
+                    .badge(badge)
+                } else {
+                    Tab(value: tab.id, role: tab.tabRole) {
+                        tabContent(tab)
+                    } label: {
+                        tabLabel(tab)
                     }
                 }
             }
         }
     }
 
+    @ViewBuilder
+    private func tabContent(_ tab: Destination) -> some View {
+        wrappedView(tab)
+            .environmentCoordinatable(_coordinator)
+#if os(iOS)
+            .toolbar(_coordinator.anyTabItems.tabBarVisibility, for: .tabBar)
+#endif
+    }
+
+    @ViewBuilder
+    private func tabLabel(_ tab: Destination) -> some View {
+        if let tabItem = tab.tabItem {
+            AnyView(tabItem)
+        }
+    }
+
     private func flowCoordinatableViewiOS17() -> some View {
         TabView(selection: _coordinator.selectedTabBinding) {
             ForEach(_coordinator.anyTabItems.tabs) { tab in
-                wrappedView(tab)
-                    .environmentCoordinatable(_coordinator)
+                tabContent(tab)
                     .tabItem {
-                        if let tabItem = tab.tabItem {
-                            AnyView(tabItem)
-                        }
+                        tabLabel(tab)
                     }
                     .tag(tab.id)
+                    .tabBadge(_coordinator.anyTabItems.badge(for: tab.id))
             }
         }
     }
@@ -504,5 +521,17 @@ public struct TabCoordinatableView: CoordinatableView {
         )
         .environmentCoordinatable(coordinator)
         .id(_coordinator.anyTabItems.id)
+    }
+}
+
+@available(iOS 18, macOS 15, *)
+private extension View {
+    @ViewBuilder
+    func tabBadge(_ count: Int?) -> some View {
+        if let count {
+            badge(count)
+        } else {
+            self
+        }
     }
 }
