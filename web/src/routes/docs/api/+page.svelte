@@ -4,6 +4,21 @@
   import FlowSim from '$lib/FlowSim.svelte';
   import TabSim from '$lib/TabSim.svelte';
   import RootSim from '$lib/RootSim.svelte';
+  import {
+    CODE_COORDINATABLE,
+    CODE_FLOW_PROTOCOL,
+    CODE_TAB_PROTOCOL,
+    CODE_ROOT_PROTOCOL,
+    CODE_FLOWSTACK,
+    CODE_ROOTC,
+    CODE_TABITEMS,
+    CODE_DESTINATION,
+    CODE_DEST_TYPES,
+    CODE_DESTINATIONABLE,
+    CODE_SCAFFOLDABLE,
+    CODE_SCAFFOLDING_TRACKED,
+    CODE_SCAFFOLDING_IGNORED
+  } from '$lib/code/api.js';
 
   // Per-symbol scroll stops — each symbol is its own anchor in the
   // ScrollProgress rail, so the reader can land on a specific protocol /
@@ -24,107 +39,6 @@
     { id: 'scaffolding-ignored', label: '@Ignored' }
   ];
 
-  // ── Code samples ───────────────────────────────────────────────────
-
-  const CODE_COORDINATABLE = `@MainActor
-public protocol Coordinatable: AnyObject, Identifiable {
-    associatedtype Destinations: Destinationable
-        where Destinations.Owner == Self
-    associatedtype ViewType: View
-
-    var parent: (any Coordinatable)? { get }
-    func view() -> ViewType
-    func customize(_ view: AnyView) -> CustomizeContentView
-}`;
-
-  const CODE_FLOW_PROTOCOL = `@MainActor
-public protocol FlowCoordinatable: Coordinatable
-    where ViewType == FlowCoordinatableView {
-
-    var stack: FlowStack<Self> { get }
-}`;
-
-  const CODE_TAB_PROTOCOL = `@MainActor
-public protocol TabCoordinatable: Coordinatable
-    where ViewType == TabCoordinatableView {
-
-    var tabItems: TabItems<Self> { get }
-}`;
-
-  const CODE_ROOT_PROTOCOL = `@MainActor
-public protocol RootCoordinatable: Coordinatable
-    where ViewType == RootCoordinatableView {
-
-    var root: Root<Self> { get }
-}`;
-
-  const CODE_FLOWSTACK = `@MainActor @Observable
-public final class FlowStack<Coordinator: FlowCoordinatable> {
-    public var root: Destination?
-    public var destinations: [Destination] = []   // pushes + modals
-    public var animation: Animation? = .default
-    public var presentedAs: PresentationType?
-    public weak var parent: (any Coordinatable)?
-}`;
-
-  const CODE_ROOTC = `@MainActor @Observable
-public final class Root<Coordinator: RootCoordinatable> {
-    public var root: Destination?
-    public var animation: Animation? = .default
-    public var presentedAs: PresentationType?
-    public var modals: [Destination] = []
-}`;
-
-  const CODE_TABITEMS = `@MainActor @Observable
-public final class TabItems<Coordinator: TabCoordinatable> {
-    public var tabs: [Destination] = []
-    public var selectedTab: UUID? = nil
-    public var tabBarVisibility: Visibility = .automatic
-    public var modals: [Destination] = []
-}`;
-
-  const CODE_DESTINATION = `public struct Destination: Identifiable, Hashable {
-    public var id: UUID
-    public var routeType: DestinationType
-    public var presentationType: DestinationType
-    public let meta: any DestinationMeta
-}`;
-
-  const CODE_DEST_TYPES = `public enum DestinationType {
-    case root, push, sheet, fullScreenCover
-}
-
-public enum PresentationType {
-    case push, sheet, fullScreenCover
-}
-
-public enum ModalPresentationType {
-    case sheet, fullScreenCover
-}`;
-
-  const CODE_DESTINATIONABLE = `@MainActor
-public protocol Destinationable {
-    associatedtype Meta: DestinationMeta
-    associatedtype Owner
-
-    var meta: Meta { get }
-    func value(for instance: Owner) -> Destination
-}
-
-@MainActor
-public protocol DestinationMeta: Equatable { }`;
-
-  const CODE_SCAFFOLDABLE = `@attached(member, names: named(Destinations), named(_injectsCoordinator))
-public macro Scaffoldable(injectsCoordinator: Bool = true)
-    = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldableMacro")`;
-
-  const CODE_SCAFFOLDING_TRACKED = `@attached(peer)
-public macro ScaffoldingTracked()
-    = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingTrackedMacro")`;
-
-  const CODE_SCAFFOLDING_IGNORED = `@attached(peer)
-public macro ScaffoldingIgnored()
-    = #externalMacro(module: "ScaffoldingMacros", type: "ScaffoldingIgnoredMacro")`;
 </script>
 
 <ScrollProgress sections={SECTIONS} />
@@ -722,53 +636,27 @@ public macro ScaffoldingIgnored()
 </main>
 
 <style>
-  /* ── Page chrome ──────────────────────────────────────────────────── */
+  /* Shared docs chrome (.docs / .article / .hero / .lede etc.) lives in
+     `$lib/styles/docs.css`. The API page tweaks a few of those values
+     and adds symbol-specific chrome (.sym, .sym-head, .pill, …). */
 
   .docs {
-    position: relative;
-    z-index: 1;
-    padding: clamp(2.5rem, 6vw, 4rem) 0 clamp(3rem, 6vw, 4rem);
+    /* Slightly smaller top padding than the prose pages so the dense
+       symbol list starts higher. */
+    padding-top: clamp(2.5rem, 6vw, 4rem);
   }
-
-  .article {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 0 clamp(1.25rem, 3.5vw, 2rem);
-  }
-
-  /* ── Hero ─────────────────────────────────────────────────────────── */
 
   .hero {
-    border-bottom: 1px solid var(--line-soft);
-    padding-bottom: clamp(2rem, 5vw, 3rem);
     margin-bottom: clamp(2.5rem, 6vw, 4rem);
-    display: flex;
-    flex-direction: column;
     gap: 0.85rem;
   }
-  .eyebrow {
-    margin: 0;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
   .hero h1 {
-    margin: 0;
-    font-family: var(--font-mono);
     font-size: clamp(1.75rem, 4vw, 2.5rem);
-    font-weight: 500;
-    line-height: 1.05;
-    letter-spacing: -0.025em;
-    color: var(--fg);
   }
   .lede {
-    margin: 0;
     font-size: 14.5px;
-    line-height: 1.65;
-    color: color-mix(in srgb, var(--fg) 75%, transparent);
-    max-width: 60ch;
   }
+
   .toc-flat {
     display: flex;
     flex-wrap: wrap;
