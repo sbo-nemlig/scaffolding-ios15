@@ -19,6 +19,8 @@ public protocol AnyTabItems: AnyObject, CoordinatableData where Coordinator: Tab
     var selectedTab: UUID? { get set }
     /// The visibility of the tab bar.
     var tabBarVisibility: Visibility { get set }
+    /// Returns the numeric badge for a tab, if one is set.
+    func badge(for tabID: Destination.ID) -> Int?
     /// The presentation type if this tab coordinator was presented modally.
     var presentedAs: PresentationType? { get set }
     /// Modal destinations presented from this coordinator.
@@ -56,6 +58,7 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
 
     /// The visibility of the tab bar.
     public var tabBarVisibility: Visibility = .automatic
+    private var tabBadges: [Destination.ID: Int] = [:]
     /// Whether ``setup(for:)`` has been called.
     public var isSetup: Bool = false
     private var initialTabs: [Coordinator.Destinations] = .init()
@@ -137,6 +140,37 @@ public class TabItems<Coordinator: TabCoordinatable>: AnyTabItems {
 
     func setTabBarVisibility(_ value: Visibility) {
         self.tabBarVisibility = value
+    }
+
+    /// Sets or clears the badge for a tab.
+    ///
+    /// Pass a positive count to show a numeric badge. Pass `nil`, `0`, or a
+    /// negative value to clear the badge.
+    public func setBadge(_ count: Int?, for tabID: Destination.ID) {
+        guard let count, count > 0 else {
+            tabBadges[tabID] = nil
+            return
+        }
+
+        tabBadges[tabID] = count
+    }
+
+    /// Returns the numeric badge for a tab, if one is set.
+    public func badge(for tabID: Destination.ID) -> Int? {
+        tabBadges[tabID]
+    }
+
+    /// Sets or clears the badge for the first tab matching a destination meta value.
+    ///
+    /// This helper operates on the resolved tabs, so call it after ``setup(for:)``
+    /// has populated ``tabs``.
+    public func setBadge(_ count: Int?, forFirst meta: Coordinator.Destinations.Meta) {
+        guard let tab = tabs.first(where: { destination in
+            guard let destinationMeta = destination.meta as? Coordinator.Destinations.Meta else { return false }
+            return destinationMeta == meta
+        }) else { return }
+
+        setBadge(count, for: tab.id)
     }
 
     private func propagateDestinationType(to coordinatable: (any Coordinatable)?, as type: PresentationType) {
