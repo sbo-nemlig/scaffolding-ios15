@@ -72,20 +72,28 @@ private struct TabBarAccessibilityIdentifierBridge: UIViewControllerRepresentabl
                 control.accessibilityIdentifier = nil
             }
 
-            previouslyManagedIdentifiers = Set(metadata.map(\.identifier))
+            let newIdentifiers = Set(metadata.map(\.identifier))
 
             let matchableMetadata = metadata.filter { !$0.matchingLabels.isEmpty }
-            guard !matchableMetadata.isEmpty else { return true }
+            guard !matchableMetadata.isEmpty else {
+                previouslyManagedIdentifiers = newIdentifiers
+                return true
+            }
 
+            var didSetAny = false
             for control in controls {
                 guard let label = control.accessibilityLabel ?? control.firstDescendantLabelText(),
                       let match = matchableMetadata.first(where: { $0.matches(renderedLabel: label) }) else { continue }
 
                 control.accessibilityIdentifier = match.identifier
+                didSetAny = true
             }
 
-            return true
-        }
+            if didSetAny {
+                previouslyManagedIdentifiers = newIdentifiers
+            }
+
+            return didSetAny
     }
 }
 
