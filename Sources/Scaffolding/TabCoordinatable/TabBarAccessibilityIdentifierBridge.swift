@@ -13,6 +13,8 @@ import UIKit
 @available(iOS 18, macOS 15, *)
 @MainActor
 private struct TabBarAccessibilityIdentifierBridge: UIViewControllerRepresentable {
+    // SwiftUI accessibility identifiers on tab labels are not propagated to
+    // the rendered UITabBarButton controls used by UI tests.
     let metadata: [TabBarAccessibilityIdentifier]
 
     func makeUIViewController(context: Context) -> UIViewController {
@@ -68,32 +70,41 @@ private struct TabBarAccessibilityIdentifierBridge: UIViewControllerRepresentabl
             let controls = tabBarController.tabBar.descendantControls()
             guard !controls.isEmpty else { return false }
 
-            for control in controls where previouslyManagedIdentifiers.contains(control.accessibilityIdentifier ?? "") {
-                control.accessibilityIdentifier = nil
-            }
-
-            let newIdentifiers = Set(metadata.map(\.identifier))
-
             let matchableMetadata = metadata.filter { !$0.matchingLabels.isEmpty }
             guard !matchableMetadata.isEmpty else {
-                previouslyManagedIdentifiers = newIdentifiers
+                clearPreviouslyManagedIdentifiers(from: controls)
+                previouslyManagedIdentifiers = []
                 return true
             }
 
-            var didSetAny = false
+            var matches: [(control: UIControl, identifier: String)] = []
             for control in controls {
                 guard let label = control.accessibilityLabel ?? control.firstDescendantLabelText(),
                       let match = matchableMetadata.first(where: { $0.matches(renderedLabel: label) }) else { continue }
 
-                control.accessibilityIdentifier = match.identifier
-                didSetAny = true
+                matches.append((control, match.identifier))
             }
 
-            if didSetAny {
-                previouslyManagedIdentifiers = newIdentifiers
+            let appliedIdentifiers = Set(matches.map(\.identifier))
+            clearPreviouslyManagedIdentifiers(from: controls)
+            guard !appliedIdentifiers.isEmpty else {
+                previouslyManagedIdentifiers = []
+                return false
             }
 
-            return didSetAny
+            for match in matches {
+                match.control.accessibilityIdentifier = match.identifier
+            }
+
+            previouslyManagedIdentifiers = appliedIdentifiers
+            return appliedIdentifiers == Set(matchableMetadata.map(\.identifier))
+        }
+
+        private func clearPreviouslyManagedIdentifiers(from controls: [UIControl]) {
+            for control in controls where previouslyManagedIdentifiers.contains(control.accessibilityIdentifier ?? "") {
+                control.accessibilityIdentifier = nil
+            }
+        }
     }
 }
 
