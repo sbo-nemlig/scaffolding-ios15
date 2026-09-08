@@ -1,0 +1,797 @@
+//
+//  QOLTests.swift
+//  ScaffoldingTests
+//
+//  Tests for stack introspection, pop(count:), replaceLast, dismissAllModals,
+//  RoutePolicy, seeded paths, sheet configuration, tab badges, expecting:
+//  overloads, debugHierarchy, and hierarchy orientation.
+//
+
+import Testing
+import SwiftUI
+import Observation
+@testable import Scaffolding
+
+// MARK: - Seeded coordinator
+
+@available(iOS 18, macOS 15, *)
+@MainActor @Observable
+final class SeededFlowCoordinator: FlowCoordinatable {
+    var stack: FlowStack<SeededFlowCoordinator>
+
+    init(pushing path: [Destinations] = []) {
+        self.stack = FlowStack<SeededFlowCoordinator>(root: .home, pushing: path)
+    }
+
+    func home() -> some View { EmptyView() }
+    func detail(id: Int) -> some View { EmptyView() }
+    func child() -> any Coordinatable { LeafFlowCoordinator() }
+
+    enum Destinations: Destinationable {
+        typealias Owner = SeededFlowCoordinator
+        case home
+        case detail(id: Int)
+        case child
+
+        enum Meta: DestinationMeta {
+            case home
+            case detail
+            case child
+        }
+
+        var meta: Meta {
+            switch self {
+            case .home: return .home
+            case .detail: return .detail
+            case .child: return .child
+            }
+        }
+
+        func value(for instance: Owner) -> Destination {
+            switch self {
+            case .home:
+                return Destination(instance.home(), meta: meta, parent: instance)
+            case .detail(let id):
+                return Destination(instance.detail(id: id), meta: meta, parent: instance)
+            case .child:
+                return Destination({ instance.child() }, meta: meta, parent: instance)
+            }
+        }
+    }
+}
+
+// MARK: - Introspection
+
+@MainActor
+@Suite("Stack introspection")
+struct IntrospectionTests {
+
+    @Test("depth counts pushes only")
+    func depthCountsPushes() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        #expect(flow.depth == 0)
+
+        flow.route(to: .settings)
+        flow.route(to: .settings)
+        flow.present(.sheetFlow)
+
+        #expect(flow.depth == 2)
+    }
+
+    @Test("topDestination reflects the top push, falling back to the root")
+    func topDestination() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        #expect(flow.topDestination == .home)
+
+        flow.route(to: .settings)
+        #expect(flow.topDestination == .settings)
+
+        flow.present(.sheetFlow)
+        #expect(flow.topDestination == .settings) // modals ignored
+
+        flow.dismissModal()
+        flow.pop()
+        #expect(flow.topDestination == .home)
+    }
+
+    @Test("isPresentingModal on flow, root, and tab coordinators")
+    func isPresentingModal() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        #expect(!flow.isPresentingModal)
+        flow.present(.sheetFlow)
+        #expect(flow.isPresentingModal)
+
+        let app = AppRootCoordinator()
+        #expect(!app.isPresentingModal)
+        app.present(.login)
+        #expect(app.isPresentingModal)
+
+        let tabs = MainTabCoordinator()
+        #expect(!tabs.isPresentingModal)
+        tabs.present(.settings)
+        #expect(tabs.isPresentingModal)
+    }
+
+    @Test("count(of:) counts occurrences in the stack")
+    func countOf() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .settings)
+        flow.route(to: .detail)
+        flow.route(to: .settings)
+
+        #expect(flow.count(of: .settings) == 2)
+        #expect(flow.count(of: .detail) == 1)
+        #expect(flow.count(of: .home) == 0) // root not counted
+    }
+}
+
+// MARK: - pop(count:) and replaceLast
+
+@MainActor
+@Suite("pop(count:) and replaceLast")
+struct PopAndReplaceTests {
+
+    @Test("pop(count:) removes exactly count destinations and fires onDismiss")
+    func popCount() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        var dismissed = 0
+        flow.route(to: .settings, onDismiss: { dismissed += 1 })
+        flow.route(to: .settings, onDismiss: { dismissed += 1 })
+        flow.route(to: .settings, onDismiss: { dismissed += 1 })
+
+        flow.pop(2)
+        #expect(flow.anyStack.destinations.count == 1)
+        #expect(dismissed == 2)
+    }
+
+    @Test("pop(count:) stops at the root and never dismisses the coordinator")
+    func popCountStopsAtRoot() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .settings)
+
+        flow.pop(10)
+        #expect(flow.anyStack.destinations.isEmpty)
+        #expect(flow.anyStack.root != nil)
+
+        flow.pop(1) // already empty — must be a no-op
+        #expect(flow.anyStack.root != nil)
+    }
+
+    @Test("replaceLast swaps the top push and resolves the replaced destination")
+    func replaceLast() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        var replacedDismissed = false
+        flow.route(to: .settings)
+        flow.route(to: .detail, onDismiss: { replacedDismissed = true })
+
+        flow.replaceLast(with: .settings)
+
+        #expect(flow.anyStack.destinations.count == 2)
+        #expect(flow.topDestination == .settings)
+        #expect(replacedDismissed)
+    }
+
+    @Test("replaceLast on an empty stack pushes instead")
+    func replaceLastFallsBackToPush() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+
+        flow.replaceLast(with: .settings)
+
+        #expect(flow.anyStack.destinations.count == 1)
+        #expect(flow.topDestination == .settings)
+        #expect(flow.anyStack.root != nil)
+    }
+
+    @Test("replaceLast replaces the top push even under a presented modal")
+    func replaceLastIgnoresModals() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .detail)
+        flow.present(.sheetFlow)
+
+        flow.replaceLast(with: .settings)
+
+        #expect(flow.topDestination == .settings)
+        #expect(flow.isPresentingModal)
+    }
+}
+
+// MARK: - dismissAllModals
+
+@MainActor
+@Suite("dismissAllModals")
+struct DismissAllModalsTests {
+
+    @Test("flow: removes every modal, keeps pushes, fires each onDismiss once")
+    func flowDismissAll() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        var dismissed = 0
+        flow.route(to: .settings)
+        flow.present(.sheetFlow, onDismiss: { dismissed += 1 })
+        flow.present(.detail, as: .fullScreenCover, onDismiss: { dismissed += 1 })
+
+        flow.dismissAllModals()
+
+        #expect(!flow.isPresentingModal)
+        #expect(flow.depth == 1)
+        #expect(dismissed == 2)
+    }
+
+    @Test("root: clears the modal container")
+    func rootDismissAll() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        var dismissed = 0
+        app.present(.login, onDismiss: { dismissed += 1 })
+        app.present(.main, onDismiss: { dismissed += 1 })
+
+        app.dismissAllModals()
+
+        #expect(app.anyRoot.modals.isEmpty)
+        #expect(dismissed == 2)
+    }
+
+    @Test("no-op without modals")
+    func noopWithoutModals() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        tabs.dismissAllModals()
+        #expect(tabs.anyTabItems.modals.isEmpty)
+    }
+}
+
+// MARK: - RoutePolicy
+
+@MainActor
+@Suite("RoutePolicy.distinct")
+struct RoutePolicyTests {
+
+    @Test("skips a push when the same case is already on top")
+    func distinctSkipsDuplicateTop() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .settings, policy: .distinct)
+        flow.route(to: .settings, policy: .distinct)
+
+        #expect(flow.anyStack.destinations.count == 1)
+    }
+
+    @Test("allows the same case when it is not on top")
+    func distinctAllowsNonTopDuplicates() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .settings, policy: .distinct)
+        flow.route(to: .detail, policy: .distinct)
+        flow.route(to: .settings, policy: .distinct)
+
+        #expect(flow.anyStack.destinations.count == 3)
+    }
+
+    @Test("treats the root as the top when nothing is pushed")
+    func distinctAgainstRoot() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .home, policy: .distinct)
+
+        #expect(flow.anyStack.destinations.isEmpty)
+    }
+
+    @Test(".always keeps duplicate pushes")
+    func alwaysAllowsDuplicates() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .settings)
+        flow.route(to: .settings)
+
+        #expect(flow.anyStack.destinations.count == 2)
+    }
+
+    @Test("skips a modal presentation when the same case is already presented")
+    func distinctSkipsDuplicateModal() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.present(.sheetFlow, policy: .distinct)
+        flow.present(.sheetFlow, policy: .distinct)
+
+        #expect(flow.anyStack.destinations.count == 1)
+
+        let app = AppRootCoordinator()
+        app.present(.login, policy: .distinct)
+        app.present(.login, policy: .distinct)
+        #expect(app.anyRoot.modals.count == 1)
+
+        let tabs = MainTabCoordinator()
+        tabs.present(.settings, policy: .distinct)
+        tabs.present(.settings, policy: .distinct)
+        #expect(tabs.anyTabItems.modals.count == 1)
+    }
+}
+
+// MARK: - Seeded initial path
+
+@MainActor
+@Suite("FlowStack(root:pushing:)")
+struct SeededPathTests {
+
+    @Test("materialises the seeded path at setup")
+    func seedsPath() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = SeededFlowCoordinator(pushing: [.detail(id: 1), .detail(id: 2)])
+        _ = flow.anyStack
+
+        #expect(flow.depth == 2)
+        #expect(flow.topDestination == .detail)
+        #expect(flow.anyStack.destinations.allSatisfy { $0.pushType == .push })
+        #expect(flow.anyStack.root != nil)
+    }
+
+    @Test("seeded coordinator destinations get parent and layer wiring")
+    func seededChildWiring() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = SeededFlowCoordinator(pushing: [.child])
+        _ = flow.anyStack
+
+        let child = flow.anyStack.destinations.first?.coordinatable
+        #expect(child?.parent === flow)
+        #expect(child?.hasLayerNavigationCoordinatable == true)
+    }
+
+    @Test("empty path behaves like the plain initializer")
+    func emptyPath() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = SeededFlowCoordinator(pushing: [])
+        _ = flow.anyStack
+        #expect(flow.depth == 0)
+    }
+}
+
+// MARK: - Sheet configuration
+
+@MainActor
+@Suite("Presenter-side sheet configuration")
+struct SheetConfigurationTests {
+
+    @Test("configured sheet carries detents and dismissal settings")
+    func configuredSheet() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.present(.sheetFlow, as: .sheet(
+            detents: [.medium, .large],
+            dragIndicator: .visible,
+            interactiveDismissDisabled: true
+        ))
+
+        let config = flow.anyStack.destinations.first?.modalConfiguration
+        #expect(config?.detents == [.medium, .large])
+        #expect(config?.dragIndicator == .visible)
+        #expect(config?.interactiveDismissDisabled == true)
+    }
+
+    @Test("plain .sheet has no configuration")
+    func plainSheet() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.present(.sheetFlow)
+
+        #expect(flow.anyStack.destinations.first?.modalConfiguration == nil)
+        #expect(flow.anyStack.destinations.first?.pushType == .sheet)
+    }
+
+    @Test("configured sheet on root and tab coordinators")
+    func containerConfiguredSheet() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        app.present(.login, as: .sheet(detents: [.medium]))
+        #expect(app.anyRoot.modals.first?.modalConfiguration?.detents == [.medium])
+
+        let tabs = MainTabCoordinator()
+        tabs.present(.settings, as: .sheet(interactiveDismissDisabled: true))
+        #expect(tabs.anyTabItems.modals.first?.modalConfiguration?.interactiveDismissDisabled == true)
+    }
+}
+
+// MARK: - Tab badges
+
+@MainActor
+@Suite("Tab badges")
+struct TabBadgeTests {
+
+    @Test("set, read, and clear a text badge")
+    func textBadge() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+
+        tabs.setBadge("3", for: .home)
+        #expect(tabs.badge(for: .home) == "3")
+        #expect(tabs.anyTabItems.tabs[0].badge == "3")
+        #expect(tabs.badge(for: .profile) == nil)
+
+        tabs.setBadge(nil, for: .home)
+        #expect(tabs.badge(for: .home) == nil)
+    }
+
+    @Test("numeric badge: 0 clears, like SwiftUI's badge(_:)")
+    func numericBadge() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+
+        tabs.setBadge(12, for: .profile)
+        #expect(tabs.badge(for: .profile) == "12")
+
+        tabs.setBadge(0, for: .profile)
+        #expect(tabs.badge(for: .profile) == nil)
+    }
+
+    @Test("badging a missing tab is a no-op")
+    func missingTab() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        tabs.setBadge("1", for: .settings) // not in the tab bar
+        #expect(tabs.badge(for: .settings) == nil)
+    }
+}
+
+// MARK: - Tab accessibility identifiers
+
+@MainActor
+@Suite("Tab accessibility identifiers")
+struct TabAccessibilityIdentifierTests {
+
+    @Test("set, read, and clear an identifier")
+    func setReadClear() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == "tab.home")
+        #expect(tabs.anyTabItems.tabs[0].accessibilityIdentifier == "tab.home")
+        #expect(tabs.tabAccessibilityIdentifier(for: .profile) == nil)
+
+        tabs.setTabAccessibilityIdentifier(nil, for: .home)
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == nil)
+    }
+
+    @Test("setting before the first render resolves the tabs")
+    func setBeforeRender() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        // No view/anyTabItems access before this call — the setter itself
+        // must resolve the initial tabs.
+        tabs.setTabAccessibilityIdentifier("tab.profile", for: .profile)
+        #expect(tabs.tabAccessibilityIdentifier(for: .profile) == "tab.profile")
+    }
+
+    @Test("identifying a missing tab is a no-op")
+    func missingTab() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        tabs.setTabAccessibilityIdentifier("tab.settings", for: .settings) // not in the tab bar
+        #expect(tabs.tabAccessibilityIdentifier(for: .settings) == nil)
+    }
+
+    @Test("an appended tab can receive an identifier")
+    func appendedTab() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        _ = tabs.anyTabItems // resolve initial tabs before mutating the set
+        tabs.appendTab(.settings)
+
+        tabs.setTabAccessibilityIdentifier("tab.settings", for: .settings)
+        #expect(tabs.tabAccessibilityIdentifier(for: .settings) == "tab.settings")
+
+        tabs.removeFirstTab(.settings)
+        #expect(tabs.tabAccessibilityIdentifier(for: .settings) == nil)
+    }
+
+    @Test("identifiers can be assigned from the coordinator's init")
+    func setFromInit() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = IdentifiedTabCoordinator()
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == "tab.home")
+        #expect(tabs.tabAccessibilityIdentifier(for: .profile) == "tab.profile")
+    }
+
+    @Test("identifiers and badges live independently on the same tab")
+    func coexistsWithBadge() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+        tabs.setBadge("3", for: .home)
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == "tab.home")
+        #expect(tabs.badge(for: .home) == "3")
+
+        tabs.setBadge(nil, for: .home)
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == "tab.home")
+    }
+}
+
+/// Sets its tab identifiers from `init`, the way the documentation
+/// recommends — the setter resolves the initial tabs itself.
+@available(iOS 18, macOS 15, *)
+@MainActor
+@Observable
+@Scaffoldable
+final class IdentifiedTabCoordinator: @MainActor TabCoordinatable {
+    var tabItems = TabItems<IdentifiedTabCoordinator>(tabs: [.home, .profile])
+
+    init() {
+        setTabAccessibilityIdentifier("tab.home", for: .home)
+        setTabAccessibilityIdentifier("tab.profile", for: .profile)
+    }
+
+    func home() -> some View { EmptyView() }
+    func profile() -> some View { EmptyView() }
+}
+
+// MARK: - expecting: overloads
+
+@MainActor
+@Suite("Typed child resolution (expecting:)")
+struct ExpectingTests {
+
+    @Test("route returns the resolved child coordinator")
+    func routeExpecting() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+
+        let detail = flow.route(to: .detail, expecting: DetailFlowCoordinator.self)
+        #expect(detail != nil)
+        #expect(detail?.parent === flow)
+        #expect(flow.anyStack.destinations.count == 1)
+    }
+
+    @Test("mismatched type returns nil but the route still happens")
+    func routeExpectingMismatch() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+
+        let wrong = flow.route(to: .detail, expecting: LeafFlowCoordinator.self)
+        #expect(wrong == nil)
+        #expect(flow.anyStack.destinations.count == 1)
+    }
+
+    @Test("view-only destination returns nil")
+    func routeExpectingViewOnly() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+
+        let none = flow.route(to: .settings, expecting: DetailFlowCoordinator.self)
+        #expect(none == nil)
+    }
+
+    @Test("deep-link chain: setRoot → selectFirstTab → route")
+    func deepLinkChain() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+
+        let tabs = app.setRoot(.main, expecting: MainTabCoordinator.self)
+        #expect(tabs != nil)
+
+        let home = tabs?.selectFirstTab(.home, expecting: HomeFlowCoordinator.self)
+        #expect(home != nil)
+
+        home?.route(to: .settings)
+        #expect(home?.depth == 1)
+    }
+
+    @Test("present returns the presented coordinator across all coordinator kinds")
+    func presentExpecting() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        #expect(flow.present(.sheetFlow, expecting: LeafFlowCoordinator.self) != nil)
+
+        let app = AppRootCoordinator()
+        #expect(app.present(.login, expecting: LoginFlowCoordinator.self) != nil)
+
+        let tabs = MainTabCoordinator()
+        #expect(tabs.present(.settings, expecting: SettingsFlowCoordinator.self) != nil)
+    }
+
+    @Test("popToFirst/popToLast return the matched coordinator")
+    func popExpecting() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let flow = HomeFlowCoordinator()
+        _ = flow.anyStack
+        flow.route(to: .detail)
+        flow.route(to: .settings)
+
+        let detail = flow.popToFirst(.detail, expecting: DetailFlowCoordinator.self)
+        #expect(detail != nil)
+        #expect(flow.anyStack.destinations.count == 1)
+    }
+}
+
+// MARK: - debugHierarchy
+
+@MainActor
+@Suite("debugHierarchy")
+struct DebugHierarchyTests {
+
+    @Test("renders the tree with roles, metas, and child coordinators")
+    func rendersTree() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+        let tabs = app.anyRoot.root?.coordinatable as? MainTabCoordinator
+        _ = tabs?.anyTabItems
+        let home = tabs?.anyTabItems.tabs.first?.coordinatable as? HomeFlowCoordinator
+        home?.route(to: .settings)
+        home?.present(.sheetFlow)
+
+        let dump = app.debugHierarchy()
+
+        #expect(dump.contains("AppRootCoordinator [root]"))
+        #expect(dump.contains("root .main → MainTabCoordinator [tab]"))
+        #expect(dump.contains("tab[0]* .home → HomeFlowCoordinator [flow]"))
+        #expect(dump.contains("push .settings"))
+        #expect(dump.contains("sheet .sheetFlow"))
+    }
+
+    @Test("renders every tab, marking the selected one")
+    func rendersAllTabs() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        _ = tabs.anyTabItems
+
+        let dump = tabs.debugHierarchy()
+
+        #expect(dump.contains("tab[0]* .home"))
+        #expect(dump.contains("tab[1] .profile → ProfileFlowCoordinator [flow]"))
+    }
+}
+
+// MARK: - Hierarchy orientation
+
+@MainActor
+@Suite("Hierarchy orientation")
+struct HierarchyOrientationTests {
+
+    @Test("routeType reflects how the coordinator was reached")
+    func routeTypes() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+        #expect(app.routeType == .root) // top of the tree
+
+        let tabs = app.anyRoot.root?.coordinatable as? MainTabCoordinator
+        #expect(tabs?.routeType == .root) // RootCoordinatable root
+
+        _ = tabs?.anyTabItems
+        let home = tabs?.anyTabItems.tabs.first?.coordinatable as? HomeFlowCoordinator
+        #expect(home?.routeType == .root) // tab child
+
+        let pushed = home?.route(to: .detail, expecting: DetailFlowCoordinator.self)
+        #expect(pushed?.routeType == .push)
+
+        let sheet = home?.present(.sheetFlow, expecting: LeafFlowCoordinator.self)
+        #expect(sheet?.routeType == .sheet)
+
+        let cover = pushed?.present(.subDetail, as: .fullScreenCover, expecting: LeafFlowCoordinator.self)
+        #expect(cover?.routeType == .fullScreenCover)
+        #expect(cover?.routeType.isModal == true)
+        #expect(pushed?.routeType.isModal == false)
+    }
+
+    @Test("ancestor(ofType:) finds the nearest match and nil otherwise")
+    func ancestorLookup() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+        let tabs = app.anyRoot.root?.coordinatable as? MainTabCoordinator
+        _ = tabs?.anyTabItems
+        let home = tabs?.anyTabItems.tabs.first?.coordinatable as? HomeFlowCoordinator
+        let leaf = home?.present(.sheetFlow, expecting: LeafFlowCoordinator.self)
+
+        #expect(leaf?.ancestor(ofType: HomeFlowCoordinator.self) === home)
+        #expect(leaf?.ancestor(ofType: MainTabCoordinator.self) === tabs)
+        #expect(leaf?.ancestor(ofType: AppRootCoordinator.self) === app)
+        #expect(leaf?.ancestor(ofType: ProfileFlowCoordinator.self) == nil)
+        #expect(app.ancestor(ofType: MainTabCoordinator.self) == nil) // never self, only ancestors
+    }
+
+    @Test("hierarchyRoot walks to the topmost coordinator")
+    func hierarchyRoot() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let app = AppRootCoordinator()
+        _ = app.anyRoot
+        let tabs = app.anyRoot.root?.coordinatable as? MainTabCoordinator
+        _ = tabs?.anyTabItems
+        let home = tabs?.anyTabItems.tabs.first?.coordinatable as? HomeFlowCoordinator
+        let leaf = home?.present(.sheetFlow, expecting: LeafFlowCoordinator.self)
+
+        #expect(leaf?.hierarchyRoot === app)
+        #expect(app.hierarchyRoot === app)
+    }
+}
+
+// MARK: - Conformance spelled through a refining protocol
+
+/// A refining protocol, as an app would declare to share `customize(_:)`
+/// across several flows. `@Scaffoldable` sees only syntax and cannot resolve
+/// the refinement, so it falls back to the declared state container.
+@available(iOS 18, macOS 15, *)
+@MainActor
+protocol RefinedFlow: FlowCoordinatable { }
+
+@available(iOS 18, macOS 15, *)
+@MainActor
+@Observable
+@Scaffoldable
+final class RefiningProtocolCoordinator: @MainActor RefinedFlow {
+    var stack = FlowStack<RefiningProtocolCoordinator>(root: .home)
+
+    func home() -> some View { EmptyView() }
+    func detail(id: Int) -> some View { EmptyView() }
+}
+
+/// Same, with the container spelled as a type annotation instead of an
+/// initializer call.
+@available(iOS 18, macOS 15, *)
+@MainActor
+@Observable
+@Scaffoldable
+final class AnnotatedContainerCoordinator: @MainActor RefinedFlow {
+    var stack: FlowStack<AnnotatedContainerCoordinator>
+
+    init() {
+        stack = FlowStack(root: .home)
+    }
+
+    func home() -> some View { EmptyView() }
+}
+
+@Suite("Refining-protocol conformance")
+@MainActor
+struct RefiningProtocolConformanceTests {
+    @Test("Destinations are generated when the clause names only a refinement")
+    func generatesDestinations() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let coordinator = RefiningProtocolCoordinator()
+        coordinator.route(to: .detail(id: 7))
+
+        #expect(coordinator.depth == 1)
+        #expect(coordinator.topDestination == .detail)
+        #expect(coordinator.isInStack(.detail))
+    }
+
+    @Test("A type-annotated state container is recognised too")
+    func annotatedContainer() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let coordinator = AnnotatedContainerCoordinator()
+        _ = coordinator.anyStack
+
+        #expect(coordinator.depth == 0)
+        #expect(coordinator.topDestination == .home)
+    }
+}

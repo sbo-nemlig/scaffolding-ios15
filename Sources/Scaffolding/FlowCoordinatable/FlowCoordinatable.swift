@@ -14,7 +14,7 @@ import os.log
 ///
 /// Conform to `FlowCoordinatable` to build stack-based navigation flows.
 /// Provide a ``FlowStack`` property and define route functions — the
-/// ``Scaffoldable(injectsCoordinator:)`` macro generates the `Destinations` enum for you.
+/// ``Scaffoldable(injectsCoordinator:codable:)`` macro generates the `Destinations` enum for you.
 ///
 /// ```swift
 /// @Scaffoldable @Observable
@@ -26,8 +26,8 @@ import os.log
 /// }
 /// ```
 ///
-/// Navigate with ``route(to:onDismiss:)``,
-/// ``FlowCoordinatable/present(_:as:onDismiss:)``, and ``pop()``.
+/// Navigate with ``route(to:policy:onDismiss:)``,
+/// ``FlowCoordinatable/present(_:as:policy:onDismiss:)``, and ``pop()``.
 @available(iOS 18, macOS 15, *)
 @MainActor
 public protocol FlowCoordinatable: Coordinatable where ViewType == FlowCoordinatableView {
@@ -208,6 +208,44 @@ private extension FlowCoordinatable {
     private func reconstructDestinations(from flattenedDestinations: [Destination], for presentationType: PresentationType) {
         var flatIndex = 0
 
+        /// Destinations the incoming path no longer contains.
+        ///
+        /// SwiftUI writes a shorter path whenever the user navigates back —
+        /// the back button, the back swipe, a long-press "pop to root".
+        /// Those destinations are just as gone as after a programmatic
+        /// `pop()`, so they owe their `onDismiss` and any suspended
+        /// `routeAndWait` continuation a resolution. Collected while the
+        /// arrays are rebuilt and resolved once at the end, so callbacks
+        /// observe a settled hierarchy rather than a half-reconstructed one.
+        var dropped: [Destination] = []
+
+        /// A dropped destination takes its subtree with it: the coordinator
+        /// it hosts is unreachable now, so anything pushed *inside* that
+        /// coordinator must resolve too. Walks only already-materialised
+        /// children — tearing a branch down must never build the rest of it.
+        func collectDropped(_ destination: Destination) {
+            dropped.append(destination)
+
+            guard let child = destination.materializedCoordinatable else { return }
+            collectDroppedBelow(child)
+        }
+
+        func collectDroppedBelow(_ coordinatable: any Coordinatable) {
+            if let flow = coordinatable as? any FlowCoordinatable {
+                let nested = flow.anyStack.destinations
+                flow.anyStack.destinations = []
+                for destination in nested { collectDropped(destination) }
+            } else if let tabs = coordinatable as? any TabCoordinatable {
+                for tab in tabs.anyTabItems.tabs {
+                    guard let child = tab.materializedCoordinatable else { continue }
+                    collectDroppedBelow(child)
+                }
+            } else if let root = coordinatable as? any RootCoordinatable,
+                      let child = root.anyRoot.root?.materializedCoordinatable {
+                collectDroppedBelow(child)
+            }
+        }
+
         func reconstructRecursively(for coordinator: any FlowCoordinatable) -> [Destination] {
             var newDestinations: [Destination] = []
 
@@ -234,7 +272,11 @@ private extension FlowCoordinatable {
                                     nestedFlow.anyStack.destinations = reconstructedNested
                                 }
                             }
+                        } else {
+                            collectDropped(originalDestination)
                         }
+                    } else {
+                        collectDropped(originalDestination)
                     }
                 } else {
                     newDestinations.append(originalDestination)
@@ -279,6 +321,14 @@ private extension FlowCoordinatable {
 
         let reconstructed = reconstructRecursively(for: self)
         self.anyStack.destinations = reconstructed
+
+        // Topmost first, matching the order the programmatic pop family
+        // resolves in. `resolveDismissal()` is single-shot, so a
+        // destination already resolved by a `pop()` that SwiftUI is only
+        // now catching up with is a no-op here.
+        for destination in dropped.reversed() {
+            destination.resolveDismissal()
+        }
     }
 }
 
@@ -334,7 +384,7 @@ public extension FlowCoordinatable {
     /// - Returns: `self` for chaining.
     @discardableResult
     func setRoot(_ destination: Destinations, animation: Animation? = nil) -> Self {
-        let dest = destination.value(for: self)
+        let dest = destination.resolvedValue(for: self)
         dest.coordinatable?.setParent(self)
         stack.setRoot(root: dest, animation: animation)
         return self
@@ -343,18 +393,28 @@ public extension FlowCoordinatable {
     /// Pushes a destination onto the navigation stack.
     ///
     /// `route(to:)` is a push-only operation — to present a destination
-    /// modally, use ``FlowCoordinatable/present(_:as:onDismiss:)`` instead.
+    /// modally, use ``FlowCoordinatable/present(_:as:policy:onDismiss:)`` instead.
+    ///
+    /// The `onDismiss` closure has an `async` alternative: to continue
+    /// straight after the pushed destination is popped, `await`
+    /// ``FlowCoordinatable/routeAndWait(to:policy:)`` instead of passing a
+    /// callback.
     ///
     /// - Parameters:
     ///   - destination: The destination to push.
+    ///   - policy: Pass ``RoutePolicy/distinct`` to skip the push when the
+    ///     same destination case is already on top — a guard against
+    ///     double-taps. Defaults to ``RoutePolicy/always``.
     ///   - onDismiss: A closure invoked when the pushed destination is
     ///     popped or otherwise removed from the stack.
     /// - Returns: `self` for chaining.
     @discardableResult
     func route(
         to destination: Destinations,
+        policy: RoutePolicy = .always,
         onDismiss: @escaping @MainActor () -> Void = { }
     ) -> Self {
+        guard !policySkips(destination, policy: policy, as: .push) else { return self }
         performRoute(to: destination, as: .push, onDismiss: onDismiss)
         return self
     }
@@ -364,18 +424,33 @@ public extension FlowCoordinatable {
     /// The modal lives on this coordinator's stack and is rendered as a
     /// sheet or full-screen cover by the flow's view layer.
     ///
+    /// The `onDismiss` closure has `async` alternatives: `await`
+    /// ``FlowCoordinatable/presentAndWait(_:as:policy:)`` to continue once the
+    /// modal closes, or ``FlowCoordinatable/present(_:as:policy:awaiting:)``
+    /// to take a value back from it.
+    ///
     /// - Parameters:
     ///   - destination: The destination to present.
     ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - policy: Pass ``RoutePolicy/distinct`` to skip the presentation
+    ///     when the same destination case is already presented. Defaults
+    ///     to ``RoutePolicy/always``.
     ///   - onDismiss: A closure invoked when the modal is dismissed.
     /// - Returns: `self` for chaining.
     @discardableResult
     func present(
         _ destination: Destinations,
         as type: ModalPresentationType = .sheet,
+        policy: RoutePolicy = .always,
         onDismiss: @escaping @MainActor () -> Void = { }
     ) -> Self {
-        performRoute(to: destination, as: type.presentationType, onDismiss: onDismiss)
+        guard !policySkips(destination, policy: policy, as: type.presentationType) else { return self }
+        performRoute(
+            to: destination,
+            as: type.presentationType,
+            configuration: type.configuration,
+            onDismiss: onDismiss
+        )
         return self
     }
 
@@ -430,6 +505,88 @@ public extension FlowCoordinatable {
             return destMeta == destination
         }
     }
+
+    /// The number of destinations pushed above the root.
+    ///
+    /// Modally presented destinations are not counted — this is the depth
+    /// of the push stack. `0` means the flow is at its root.
+    var depth: Int {
+        stack.destinations.count { $0.pushType == .push }
+    }
+
+    /// The destination case currently on top of the push stack.
+    ///
+    /// Returns the meta of the topmost *pushed* destination, or the root's
+    /// meta when nothing is pushed. Modals are ignored.
+    var topDestination: Destinations.Meta? {
+        if let last = stack.destinations.last(where: { $0.pushType == .push }) {
+            return last.meta as? Destinations.Meta
+        }
+        return anyStack.root?.meta as? Destinations.Meta
+    }
+
+    /// Whether this coordinator currently presents a modal (sheet or
+    /// full-screen cover) on its own stack.
+    var isPresentingModal: Bool {
+        stack.destinations.contains {
+            $0.pushType == .sheet || $0.pushType == .fullScreenCover
+        }
+    }
+
+    /// The number of occurrences of the given destination case in the
+    /// navigation stack (pushed and presented destinations; the root is
+    /// not counted).
+    func count(of destination: Destinations.Meta) -> Int {
+        stack.destinations.count { dest in
+            guard let destMeta = dest.meta as? Self.Destinations.Meta else { return false }
+            return destMeta == destination
+        }
+    }
+
+    /// Pops up to `count` destinations from the navigation stack.
+    ///
+    /// Unlike repeated calls to ``pop()``, this stops at the root — it
+    /// never dismisses the coordinator itself when the stack runs out.
+    ///
+    /// - Parameter count: The number of destinations to remove.
+    /// - Returns: `self` for chaining.
+    @discardableResult
+    func pop(_ count: Int) -> Self {
+        stack.pop(count: count)
+        return self
+    }
+
+    /// Replaces the topmost pushed destination with a new one.
+    ///
+    /// The replaced destination's `onDismiss` fires exactly once. Use this
+    /// for transitions where back should skip the current screen — e.g.
+    /// replacing a loading screen with its result, or advancing a wizard
+    /// step without letting the user return to it.
+    ///
+    /// When nothing is pushed the destination is pushed normally, like
+    /// ``route(to:policy:onDismiss:)`` — the root is never replaced (use
+    /// ``setRoot(_:animation:)`` for that).
+    ///
+    /// - Parameters:
+    ///   - destination: The destination that takes the top position.
+    ///   - onDismiss: A closure invoked when the new destination is
+    ///     popped or otherwise removed from the stack.
+    /// - Returns: `self` for chaining.
+    @discardableResult
+    func replaceLast(
+        with destination: Destinations,
+        onDismiss: @escaping @MainActor () -> Void = { }
+    ) -> Self {
+        guard let index = stack.destinations.lastIndex(where: { $0.pushType == .push }) else {
+            return route(to: destination, onDismiss: onDismiss)
+        }
+
+        let dest = makeDestination(for: destination, as: .push, onDismiss: onDismiss)
+        let replaced = stack.destinations[index]
+        stack.destinations[index] = dest
+        replaced.resolveDismissal()
+        return self
+    }
 }
 
 @available(iOS 18, macOS 15, *)
@@ -445,9 +602,11 @@ public extension FlowCoordinatable {
     @discardableResult
     func route<T: Coordinatable>(
         to destination: Destinations,
+        policy: RoutePolicy = .always,
         onDismiss: @escaping @MainActor () -> Void = { },
         _ action: @escaping @MainActor (T) -> Void
     ) -> Self {
+        guard !policySkips(destination, policy: policy, as: .push) else { return self }
         let dest = performRoute(to: destination, as: .push, onDismiss: onDismiss)
         if let coordinator = dest.coordinatable as? T {
             action(coordinator)
@@ -466,10 +625,17 @@ public extension FlowCoordinatable {
     func present<T: Coordinatable>(
         _ destination: Destinations,
         as type: ModalPresentationType = .sheet,
+        policy: RoutePolicy = .always,
         onDismiss: @escaping @MainActor () -> Void = { },
         _ action: @escaping @MainActor (T) -> Void
     ) -> Self {
-        let dest = performRoute(to: destination, as: type.presentationType, onDismiss: onDismiss)
+        guard !policySkips(destination, policy: policy, as: type.presentationType) else { return self }
+        let dest = performRoute(
+            to: destination,
+            as: type.presentationType,
+            configuration: type.configuration,
+            onDismiss: onDismiss
+        )
         if let coordinator = dest.coordinatable as? T {
             action(coordinator)
         }
@@ -484,7 +650,7 @@ public extension FlowCoordinatable {
         animation: Animation? = nil,
         _ action: @escaping @MainActor (T) -> Void
     ) -> Self {
-        let dest = destination.value(for: self)
+        let dest = destination.resolvedValue(for: self)
         dest.coordinatable?.setParent(self)
         stack.setRoot(root: dest, animation: animation)
         if let coordinator = dest.coordinatable as? T {
@@ -524,18 +690,19 @@ public extension FlowCoordinatable {
 
 @available(iOS 18, macOS 15, *)
 @MainActor
-private extension FlowCoordinatable {
-    @discardableResult
-    func performRoute(
-        to destination: Destinations,
+extension FlowCoordinatable {
+    func makeDestination(
+        for destination: Destinations,
         as pushType: PresentationType,
+        configuration: SheetConfiguration? = nil,
         onDismiss: @escaping @MainActor () -> Void
     ) -> Destination {
-        var dest = destination.value(for: self)
+        var dest = destination.resolvedValue(for: self)
 
         dest.setOnDismiss(onDismiss)
         dest.setPushType(pushType)
         dest.setRouteType(DestinationType.from(presentationType: pushType))
+        dest.setModalConfiguration(configuration)
         dest.coordinatable?.setHasLayerNavigationCoordinatable(pushType == .push)
         dest.coordinatable?.setParent(self)
 
@@ -543,10 +710,225 @@ private extension FlowCoordinatable {
             flowCoordinator.setPresentedAs(pushType)
         }
 
+        return dest
+    }
+
+    @discardableResult
+    func performRoute(
+        to destination: Destinations,
+        as pushType: PresentationType,
+        configuration: SheetConfiguration? = nil,
+        onDismiss: @escaping @MainActor () -> Void
+    ) -> Destination {
+        let dest = makeDestination(
+            for: destination,
+            as: pushType,
+            configuration: configuration,
+            onDismiss: onDismiss
+        )
+
         stack.push(destination: dest)
 
         checkForMultipleModals(pushType: pushType)
         return dest
+    }
+
+    /// Whether a `.distinct` policy should skip this navigation request.
+    func policySkips(
+        _ destination: Destinations,
+        policy: RoutePolicy,
+        as pushType: PresentationType
+    ) -> Bool {
+        guard case .distinct = policy else { return false }
+
+        if pushType == .push {
+            return topDestination == destination.meta
+        }
+
+        return stack.destinations.contains { dest in
+            guard dest.pushType == .sheet || dest.pushType == .fullScreenCover else { return false }
+            guard let destMeta = dest.meta as? Destinations.Meta else { return false }
+            return destMeta == destination.meta
+        }
+    }
+}
+
+// MARK: - Typed child resolution
+
+@available(iOS 18, macOS 15, *)
+@MainActor
+public extension FlowCoordinatable {
+    /// Pushes a destination and returns its resolved child coordinator.
+    ///
+    /// A non-closure alternative to
+    /// ``route(to:policy:onDismiss:_:)`` that flattens deep-link chains:
+    ///
+    /// ```swift
+    /// let settings = route(to: .settings, expecting: SettingsCoordinator.self)
+    /// settings?.route(to: .account)
+    /// ```
+    ///
+    /// - Returns: The child coordinator cast to `T`, or `nil` when the
+    ///   destination is view-only, resolves to a different type, or the
+    ///   policy skipped the push.
+    func route<T: Coordinatable>(
+        to destination: Destinations,
+        policy: RoutePolicy = .always,
+        onDismiss: @escaping @MainActor () -> Void = { },
+        expecting coordinatorType: T.Type
+    ) -> T? {
+        guard !policySkips(destination, policy: policy, as: .push) else { return nil }
+        let dest = performRoute(to: destination, as: .push, onDismiss: onDismiss)
+        return dest.coordinatable as? T
+    }
+
+    /// Presents a destination modally and returns its resolved child
+    /// coordinator. See ``route(to:policy:onDismiss:expecting:)``.
+    func present<T: Coordinatable>(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        policy: RoutePolicy = .always,
+        onDismiss: @escaping @MainActor () -> Void = { },
+        expecting coordinatorType: T.Type
+    ) -> T? {
+        guard !policySkips(destination, policy: policy, as: type.presentationType) else { return nil }
+        let dest = performRoute(
+            to: destination,
+            as: type.presentationType,
+            configuration: type.configuration,
+            onDismiss: onDismiss
+        )
+        return dest.coordinatable as? T
+    }
+
+    /// Replaces the root and returns its resolved child coordinator.
+    /// See ``route(to:policy:onDismiss:expecting:)``.
+    func setRoot<T: Coordinatable>(
+        _ destination: Destinations,
+        animation: Animation? = nil,
+        expecting coordinatorType: T.Type
+    ) -> T? {
+        let dest = destination.resolvedValue(for: self)
+        dest.coordinatable?.setParent(self)
+        stack.setRoot(root: dest, animation: animation)
+        return dest.coordinatable as? T
+    }
+
+    /// Pops to the **first** matching destination and returns its child
+    /// coordinator, if any.
+    func popToFirst<T: Coordinatable>(
+        _ destination: Destinations.Meta,
+        expecting coordinatorType: T.Type
+    ) -> T? {
+        stack.popToFirst(destination)?.coordinatable as? T
+    }
+
+    /// Pops to the **last** matching destination and returns its child
+    /// coordinator, if any.
+    func popToLast<T: Coordinatable>(
+        _ destination: Destinations.Meta,
+        expecting coordinatorType: T.Type
+    ) -> T? {
+        stack.popToLast(destination)?.coordinatable as? T
+    }
+}
+
+// MARK: - Awaitable navigation
+
+@available(iOS 18, macOS 15, *)
+@MainActor
+public extension FlowCoordinatable {
+    /// Pushes a destination and suspends until it is popped or otherwise
+    /// removed from the stack.
+    ///
+    /// The suspension resumes exactly once, no matter how the destination
+    /// leaves the stack — `pop()`, `popToRoot()`, a back swipe, a root
+    /// swap, or the whole coordinator being dismissed.
+    ///
+    /// ```swift
+    /// await routeAndWait(to: .picker)
+    /// // picker was closed — read whatever state it wrote
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - destination: The destination to push.
+    ///   - policy: See ``route(to:policy:onDismiss:)``. When the policy
+    ///     skips the push, this returns immediately.
+    func routeAndWait(
+        to destination: Destinations,
+        policy: RoutePolicy = .always
+    ) async {
+        guard !policySkips(destination, policy: policy, as: .push) else { return }
+        let dest = performRoute(to: destination, as: .push, onDismiss: { })
+        await dest.resolution.awaitResolution()
+    }
+
+    /// Presents a destination modally and suspends until it is dismissed.
+    ///
+    /// The suspension resumes exactly once, whether the modal is dismissed
+    /// interactively, via ``Coordinatable/dismissModal()``, or by the
+    /// presented coordinator calling ``Coordinatable/dismissCoordinator()``.
+    ///
+    /// - Parameters:
+    ///   - destination: The destination to present.
+    ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - policy: See ``present(_:as:policy:onDismiss:)``. When the
+    ///     policy skips the presentation, this returns immediately.
+    func presentAndWait(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        policy: RoutePolicy = .always
+    ) async {
+        guard !policySkips(destination, policy: policy, as: type.presentationType) else { return }
+        let dest = performRoute(
+            to: destination,
+            as: type.presentationType,
+            configuration: type.configuration,
+            onDismiss: { }
+        )
+        await dest.resolution.awaitResolution()
+    }
+
+    /// Presents a destination modally and suspends until it is dismissed,
+    /// returning the value the presented coordinator handed back.
+    ///
+    /// The presented coordinator delivers the result with
+    /// ``Coordinatable/dismissCoordinator(returning:)``. Any other form of
+    /// dismissal — an interactive swipe, ``Coordinatable/dismissModal()``,
+    /// a plain ``Coordinatable/dismissCoordinator()`` — resumes with `nil`,
+    /// so cancellation is handled for free:
+    ///
+    /// ```swift
+    /// guard let token = await present(.login, awaiting: AuthToken.self) else {
+    ///     return // user backed out
+    /// }
+    /// session.store(token)
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - destination: The destination to present.
+    ///   - type: The modal presentation style. Defaults to `.sheet`.
+    ///   - policy: See ``present(_:as:policy:onDismiss:)``. When the
+    ///     policy skips the presentation, this returns `nil` immediately.
+    ///   - resultType: The type of value expected back.
+    /// - Returns: The value passed to `dismissCoordinator(returning:)`,
+    ///   or `nil` when the modal was dismissed without a result (or with a
+    ///   result of a different type).
+    func present<Result>(
+        _ destination: Destinations,
+        as type: ModalPresentationType = .sheet,
+        policy: RoutePolicy = .always,
+        awaiting resultType: Result.Type
+    ) async -> Result? {
+        guard !policySkips(destination, policy: policy, as: type.presentationType) else { return nil }
+        let dest = performRoute(
+            to: destination,
+            as: type.presentationType,
+            configuration: type.configuration,
+            onDismiss: { }
+        )
+        await dest.resolution.awaitResolution()
+        return dest.resolution.result as? Result
     }
 }
 

@@ -1,4 +1,4 @@
-name: Deploy site (Svelte + DocC) to GitHub Pages
+name: Deploy DocC to GitHub Pages
 
 on:
   push:
@@ -16,13 +16,19 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      # Pick the newest Xcode the image ships rather than pinning a version
+      # that disappears with the next image bump.
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest/Contents/Developer"
+          xcodebuild -version
+          swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
@@ -32,41 +38,37 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
-
-      - name: Build Svelte site
-        working-directory: web
-        env:
-          BASE_PATH: /scaffolding
-        run: npm run build
-
-      - name: Stage Svelte build at the Pages root
+      - name: Build DocC at the Pages root
         run: |
           mkdir -p ./docs
-          cp -R web/build/. ./docs/
-
-      - name: Build DocC into /scaffolding/docc/
-        run: |
-          mkdir -p ./docs/docc
-          swift package --allow-writing-to-directory ./docs/docc \
+          swift package --allow-writing-to-directory ./docs \
             generate-documentation \
             --target Scaffolding \
-            --output-path ./docs/docc \
+            --output-path ./docs \
             --transform-for-static-hosting \
-            --hosting-base-path scaffolding/docc
+            --hosting-base-path scaffolding
 
-      # The Pages artifact now contains:
-      #   /                              → Svelte landing & docs pages
-      #   /docc/documentation/scaffolding/ → DocC archive
+      # The Pages artifact contains the DocC archive only:
+      #   /documentation/scaffolding/ → library documentation
+
+      # DocC has no route at the site root, so the bare Pages URL would
+      # render its not-found screen. Redirect it to the docs landing page.
+      - name: Redirect the site root to the documentation
+        run: |
+          cat > ./docs/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=/scaffolding/documentation/scaffolding/">
+            <link rel="canonical" href="https://dotaeva.github.io/scaffolding/documentation/scaffolding/">
+            <title>Scaffolding</title>
+          </head>
+          <body>
+            <p>Redirecting to the <a href="/scaffolding/documentation/scaffolding/">Scaffolding documentation</a>…</p>
+          </body>
+          </html>
+          HTML
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

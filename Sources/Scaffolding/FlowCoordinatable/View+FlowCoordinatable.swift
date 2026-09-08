@@ -32,6 +32,7 @@ extension View {
         ) { destination in
             modalContent(destination)
                 .id(destination.id)
+                .applySheetConfiguration(destination.modalConfiguration)
         }
     }
 
