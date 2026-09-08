@@ -81,8 +81,12 @@ Is it a push/pop on the current stack?
 | Show a one-screen sheet (simple form, info) | SwiftUI's `.sheet(item:)` |
 | Show a multi-step sub-flow | `coordinator.present(.subflow, as: .sheet)` |
 | Show a full-screen sub-flow | `coordinator.present(.subflow, as: .fullScreenCover)` |
+| Dismiss a modal you presented (presenter side, any coordinator type) | `coordinator.dismissModal()` |
+| Intercept a tab tap (guard, redirect, pop-to-root on re-tap) | override `shouldSelect(tab:isReselection:)` on the `TabCoordinatable` |
 | Atomically replace the entire view hierarchy (auth, onboarding) | `appCoordinator.setRoot(.authenticated)` (on a `RootCoordinatable`) |
 | Switch tabs programmatically | `tabCoordinator.selectFirstTab(.home)` |
+| Make a tab addressable in UI tests | `tabCoordinator.setTabAccessibilityIdentifier("tab.home", for: .home)` — a plain `.accessibilityIdentifier()` on the label view never reaches the tab bar item |
+| Replace the system tab bar with your own UI | `TabItems(tabs:, visibility: .hidden)` + custom bar view (see *Custom tab bar*) |
 
 Stay native for view-only modals. The native modifier is lighter, requires no coordinator boundary, and avoids the overhead of an extra `Destinations` case.
 
@@ -101,7 +105,8 @@ final class HomeCoordinator: @MainActor FlowCoordinatable {
     func detail(item: Item) -> some View         { DetailView(item: item) }
     func settings()         -> any Coordinatable { SettingsCoordinator() }
 
-    // Optional helpers (regular methods, not auto-generated).
+    // Optional helpers. Void return type ⇒ never tracked by the macro —
+    // no @ScaffoldingIgnored needed (or wanted) here.
     func openDetail(_ item: Item) {
         route(to: .detail(item: item))
     }
@@ -110,18 +115,22 @@ final class HomeCoordinator: @MainActor FlowCoordinatable {
 
 ### Auto-tracked return types
 
-The `@Scaffoldable` macro generates a `Destinations` enum with one case per function whose return type is one of:
+The `@Scaffoldable` macro scans the coordinator's **functions** — and only functions; stored/computed properties, `init`, and `deinit` are never scanned — and generates a `Destinations` enum case for every function whose return type is one of:
 
 | Return type | What it generates |
 |---|---|
 | `some View` | A view destination |
 | `any Coordinatable` | A child-coordinator destination |
-| `(any Coordinatable, some View)` | Tab tuple (coordinator + label) |
-| `(some View, some View)` | Tab tuple (view-only + label) |
-| `(any Coordinatable, some View, TabRole)` | Tab tuple with role |
-| `(some View, some View, TabRole)` | Tab tuple with role + view-only |
+| `(any Coordinatable, some View)` | Tab: coordinator + label view |
+| `(some View, some View)` | Tab: view-only + label view |
+| `(any Coordinatable, TabRole)` | Tab: coordinator + role |
+| `(some View, TabRole)` | Tab: view-only + role |
+| `(any Coordinatable, some View, TabRole)` | Tab: coordinator + label + role |
+| `(some View, some View, TabRole)` | Tab: view-only + label + role |
 
-Anything else — including a **concrete** coordinator type like `-> LoginCoordinator` — is **not** recognised. For a child coordinator the return type **must** be `any Coordinatable` (the existential).
+Anything else is skipped **automatically**: `Void` functions, concrete return types — including a **concrete** coordinator like `-> LoginCoordinator` — closures, generic types (`Foo<Bar>`), arrays, and any tuple shape not in the table. None of it needs an annotation.
+
+For a child coordinator the return type **must** be `any Coordinatable` (the existential); views must return `some View`:
 
 ```swift
 // ❌ Won't be picked up — concrete type.
@@ -131,20 +140,42 @@ func login() -> LoginCoordinator { LoginCoordinator() }
 func login() -> any Coordinatable { LoginCoordinator() }
 ```
 
-### Marking exclusions
+### `@ScaffoldingIgnored` — when to use it, and when not to
 
-Use `@ScaffoldingIgnored` whenever a method returns one of the auto-tracked types but **isn't** a destination — typically a `customize(_:)` override or a helper view builder shared between screens:
+**Do not** put `@ScaffoldingIgnored` on everything that isn't a route. The macro already ignores:
 
 ```swift
+// ❌ All of these annotations are redundant noise — none of these
+//    declarations is tracked in the first place. Remove the attribute.
+@ScaffoldingIgnored var session: AuthToken?                  // properties: never scanned
+@ScaffoldingIgnored func openDetail(_ item: Item) {          // returns Void: never tracked
+    route(to: .detail(item: item))
+}
+@ScaffoldingIgnored func makeHandler() -> () -> Void { ... } // closure return: never tracked
+```
+
+Use it **only** when a function's return type is in the auto-tracked table but the function isn't a destination:
+
+```swift
+// ✅ Genuinely needed — `customize` returns `some View`, so the macro
+//    would otherwise emit a bogus `.customize` destination.
 @ScaffoldingIgnored
 func customize(_ view: AnyView) -> some View {
     view
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { /* shared toolbar */ }
 }
+
+// ✅ Shared view-builder helper — returns `some View` but isn't a route.
+@ScaffoldingIgnored
+func emptyState(message: String) -> some View { ... }
+
+// ✅ Factory helper returning a coordinator that isn't routed to directly.
+@ScaffoldingIgnored
+func makeDebugCoordinator() -> any Coordinatable { ... }
 ```
 
-Use `@ScaffoldingTracked` only when you want the *opposite* default — explicit opt-in. After applying it once, only methods carrying `@ScaffoldingTracked` are emitted as destinations.
+There is no opt-in tracking attribute. Auto-tracking by return type plus exclusion via `@ScaffoldingIgnored` is the only mechanism.
 
 ---
 
@@ -361,6 +392,170 @@ final class MainTabCoordinator: @MainActor TabCoordinatable {
 }
 ```
 
+### Intercepting tab selection
+
+Override `shouldSelect(tab:isReselection:)` on a `TabCoordinatable` to intercept **UI-driven** tab changes (taps on the tab bar). Return `false` to keep the current tab; perform your own navigation instead if needed. When the user re-taps the already-selected tab, the hook fires with `isReselection == true` (the return value is ignored — there's no change to veto). Programmatic selection (`selectFirstTab`, `select(index:)`, …) bypasses the hook, so redirecting from inside it doesn't recurse.
+
+```swift
+@MainActor @Observable @Scaffoldable
+final class MainTabCoordinator: @MainActor TabCoordinatable {
+    var tabItems = TabItems<MainTabCoordinator>(tabs: [.home, .profile])
+
+    func home() -> (any Coordinatable, some View) {
+        (HomeCoordinator(), Label("Home", systemImage: "house"))
+    }
+    func profile() -> (any Coordinatable, some View) {
+        (ProfileCoordinator(), Label("Profile", systemImage: "person"))
+    }
+
+    // Returns Bool ⇒ never tracked by the macro — no @ScaffoldingIgnored needed.
+    func shouldSelect(tab: Destinations.Meta, isReselection: Bool) -> Bool {
+        // Re-tap of the selected tab → pop its flow to the root.
+        if isReselection {
+            if tab == .home {
+                selectFirstTab(.home) { (home: HomeCoordinator) in home.popToRoot() }
+            }
+            return true
+        }
+        // Guard a tab behind authentication.
+        if tab == .profile && !session.isAuthenticated {
+            present(.login)   // show login instead of switching
+            return false
+        }
+        return true
+    }
+}
+```
+
+### Custom tab bar
+
+To replace the system tab bar with your own UI, stay on `TabCoordinatable` — don't hand-roll tab state in a view. Three pieces:
+
+1. **Hide the native bar** — pass `visibility: .hidden` to the `TabItems` initializer (or call `setTabBarVisibility(.hidden)` later).
+2. **Omit the label views.** The `some View` label in the tab tuple only feeds the native tab bar. With a custom bar it's dead weight — tab routes can return plain `any Coordinatable` (or `some View` for a view-only tab) instead of `(any Coordinatable, some View)`. Both are auto-tracked, so the macro still generates the `.home` / `.profile` cases; the tab simply has no native label.
+3. **Build the bar from the macro-generated values.** The bar is an ordinary view: it reads the coordinator from `@Environment`, renders a button per `Destinations.Meta` case, drives selection with `selectFirstTab(_:)`, and derives the selected state from `tabItems.selectedTab`. Badges come from `badge(for:)`, accessibility identifiers from `tabAccessibilityIdentifier(for:)` (apply with `.accessibilityIdentifier` on the button). Attach it in `customize(_:)`, which wraps the whole `TabView`.
+
+```swift
+@MainActor @Observable @Scaffoldable
+final class MainTabCoordinator: @MainActor TabCoordinatable {
+    var tabItems = TabItems<MainTabCoordinator>(
+        tabs: [.home, .profile],
+        visibility: .hidden          // native bar off
+    )
+
+    // No native bar → no label views. Plain returns still generate the cases.
+    func home()    -> any Coordinatable { HomeCoordinator() }
+    func profile() -> any Coordinatable { ProfileCoordinator() }
+
+    @ScaffoldingIgnored
+    func customize(_ view: AnyView) -> some View {
+        view.safeAreaInset(edge: .bottom) { CustomTabBar() }
+    }
+}
+
+struct CustomTabBar: View {
+    @Environment(MainTabCoordinator.self) private var coordinator
+
+    var body: some View {
+        HStack {
+            tabButton(.home,    icon: "house")
+            tabButton(.profile, icon: "person")
+        }
+    }
+
+    private func tabButton(
+        _ tab: MainTabCoordinator.Destinations.Meta,
+        icon: String
+    ) -> some View {
+        Button {
+            coordinator.selectFirstTab(tab)
+        } label: {
+            Image(systemName: icon)
+                .foregroundStyle(isSelected(tab) ? Color.accentColor : .secondary)
+        }
+    }
+
+    private func isSelected(_ tab: MainTabCoordinator.Destinations.Meta) -> Bool {
+        coordinator.tabItems.tabs
+            .first { $0.id == coordinator.tabItems.selectedTab }
+            .flatMap { $0.meta as? MainTabCoordinator.Destinations.Meta } == tab
+    }
+}
+```
+
+One caveat: taps on a custom bar go through `selectFirstTab(_:)`, which is **programmatic** selection — `shouldSelect(tab:isReselection:)` is not consulted. If you need guarding or re-tap behavior, call the hook yourself from the button action:
+
+```swift
+Button {
+    let isReselection = isSelected(tab)
+    if coordinator.shouldSelect(tab: tab, isReselection: isReselection) && !isReselection {
+        coordinator.selectFirstTab(tab)
+    }
+}
+```
+
+### Presenter-side modal dismissal
+
+`present(_:as:)` is paired with `dismissModal()`, available on **every** coordinator type. It removes the most recently presented modal and fires its `onDismiss` exactly once — equivalent to the user swiping the sheet away. Use it when the **presenter** decides the modal is done; the presented coordinator itself still uses `dismissCoordinator()`. This also covers view-only modals (a `some View` route presented modally), which have no coordinator to call `dismissCoordinator()` on.
+
+```swift
+appCoordinator.present(.whatsNew)          // some View route — no child coordinator
+appCoordinator.dismissModal()              // presenter closes it later
+```
+
+On a `FlowCoordinatable`, `dismissModal()` removes only the topmost modal and never touches pushed destinations — prefer it over `pop()` for closing modals: `pop()` removes whatever is last on the stack (and dismisses the whole coordinator when the stack is empty), while `dismissModal()` is a safe no-op when nothing is presented.
+
+---
+
+## Orienting in a nested hierarchy
+
+Deep trees (root → tabs → flows → presented sub-flows) make it easy to lose track of which coordinator owns the current screen. Don't guess — Scaffolding has explicit orientation tools.
+
+### Which coordinator do I call?
+
+- **From a view:** the nearest coordinator via `@Environment(HomeCoordinator.self)`. Every *ancestor* coordinator is injected too — `@Environment(AppCoordinator.self)` works from any depth. Prefer the nearest one; reach for an ancestor only for actions that genuinely belong to it (root swaps, tab switching).
+- **From a coordinator, upward:** `ancestor(ofType:)` walks the `parent` chain to this coordinator's nearest ancestor of that type:
+
+  ```swift
+  // A flow deep in the tree exposes an action that belongs to the app root.
+  func signOut() {
+      ancestor(ofType: AppCoordinator.self)?.setRoot(.unauthenticated)
+  }
+  ```
+
+- **From a coordinator, downward:** stay typed through the deep-link trailing closures / `expecting:` overloads (see Deep linking). Never store references to child coordinators.
+
+### Where am I?
+
+| Question | API |
+|---|---|
+| How was this **coordinator** presented? | `coordinator.routeType` — `.root` / `.push` / `.sheet` / `.fullScreenCover`; `routeType.isModal` collapses the modal cases |
+| How was this **screen** reached? (in a view) | `@Environment(\.destination).routeType` |
+| How deep is the flow? | `flow.depth` — pushed count above root, modals excluded |
+| What's on top? | `flow.topDestination` — `Destinations.Meta` of the top push, or the root's |
+| Is a case already in the stack? | `flow.isInStack(.detail)`, `flow.count(of: .detail)` |
+| Is a modal up? | `coordinator.isPresentingModal` (any coordinator type) |
+
+The two `routeType`s answer different questions and can differ for the same screen: a view pushed inside a sheet-presented flow reads `.push` from `\.destination`, while its flow coordinator reads `.sheet`.
+
+### When routing misbehaves, print the tree first
+
+```swift
+print(coordinator.hierarchyRoot.debugHierarchy())   // whole tree from anywhere
+```
+
+```
+AppRootCoordinator [root]
+  root .main → MainTabCoordinator [tab]
+    tab[0]* .home → HomeFlowCoordinator [flow]
+      root .home
+      push .settings
+      sheet .sheetFlow → LeafFlowCoordinator [flow]
+        root .leaf
+```
+
+`hierarchyRoot` is the topmost coordinator of the tree; `debugHierarchy()` is a side-effect-free snapshot (uncreated children are reported as `(not yet created)`, never materialised). It answers "who owns what" immediately — verify your mental model of the tree against it before changing navigation code.
+
 ---
 
 ## Previews
@@ -450,6 +645,114 @@ The same view, used as a root, a pushed detail, and a presented sheet, renders t
 
 ---
 
+## Testing
+
+A coordinator is a plain `@MainActor @Observable` class and every navigation call mutates its state **synchronously**, so the entire navigation layer is unit-testable: no host app, no rendered `NavigationStack`, no UI test, no view-inspection library. Test the shipping coordinator directly — don't invent a test double for it.
+
+This is the payoff of the discipline above. If navigation logic can't be reached from a test, the cause is almost always state that leaked into a view.
+
+The package ships a second library, **ScaffoldingTesting**, for the test target only (it imports Swift Testing — never link it into an app target). Four helpers:
+
+| Helper | Use it for |
+|---|---|
+| `coordinator.activated()` | Resolving the initial root/tabs before asserting. **Required** — see below. |
+| `coordinator.descendant(ofType:)` / `descendants(ofType:)` | A typed handle on an already-created child, including one the code under test presented itself. Never materialises anything. |
+| `coordinator.hierarchyContains(_:_:)` / `(_:_:as:)` | Typed whole-tree assertions instead of `debugHierarchy()` string matching. |
+| `await waitUntil { … }` | Letting a `Task` started by the code under test run before asserting. |
+
+```swift
+import Testing
+import Scaffolding
+import ScaffoldingTesting
+@testable import MyApp
+
+@MainActor                          // coordinators are MainActor-isolated
+@Suite("Home flow")
+struct HomeFlowTests {
+    @Test("opening a transaction pushes one screen")
+    func openPushes() {
+        let home = HomeCoordinator().activated()
+
+        home.open(Transaction.samples[0])
+
+        #expect(home.depth == 1)
+        #expect(home.topDestination == .transaction)
+    }
+}
+```
+
+### Always activate first
+
+`FlowStack` / `Root` / `TabItems` resolve their initial destinations lazily — the first time the framework touches `view`, `anyStack`, `anyRoot`, or `anyTabItems`, which at runtime is the first render. A test renders nothing, so without `activated()` the root is still unresolved and every root-dependent read (`topDestination`, `isRoot(_:)`, `debugHierarchy()`) comes back empty. Pushes and presentations work without it; assertions about the root don't.
+
+### What to assert on
+
+The orientation API from *Where am I?* is the assertion surface: `depth`, `topDestination`, `isInStack(_:)`, `count(of:)`, `isPresentingModal`, `isRoot(_:)`, `isInTabItems(_:)`, `badge(for:)`, `routeType`, `ancestor(ofType:)`, `hierarchyRoot`. For multi-step navigation, assert the shape of the tree:
+
+```swift
+app.handle(URL(string: "myapp://holding/NVDA")!)
+
+#expect(app.hierarchyContains(InvestCoordinator.self, .holding, as: .push))
+#expect(app.hierarchyContains(MainTabCoordinator.self, .invest, as: .tab(index: 2, isSelected: true)))
+```
+
+`hierarchySnapshot()` (in the main library) returns that tree as `[HierarchyNode]` — `role`, `meta`, `coordinator`, `children` — when a test or a debug UI needs more than a yes/no. Never assert on framework internals (`Destination`, `pushType`, `resolution`) or on SwiftUI output.
+
+### Reaching a child coordinator
+
+Two ways, and they answer different questions:
+
+- **In production code** — the `expecting:` overloads (or typed trailing closures) hand the child over at the moment the route lands: `let picker = cards.present(.limitPicker, expecting: LimitCoordinator.self)`.
+- **In a test** — `descendant(ofType:)` finds a child the code under test created on its own, which is the only way in when the action awaits its own presentation:
+
+```swift
+let picking = Task { await cards.changeLimit() }   // wraps present(_:awaiting:)
+await waitUntil { cards.isPresentingModal }
+
+cards.descendant(ofType: LimitCoordinator.self)?.finish(2_000)
+await picking.value
+
+#expect(cards.limit == 2_000)
+```
+
+Don't store child coordinator references on a coordinator to make it testable — that breaks the ownership model. Returning the child from an action (`@discardableResult` + `expecting:`) is fine and often the clearest seam.
+
+### Modals, guards, and results
+
+```swift
+// Presenter-side dismissal, and the .distinct policy swallowing a double tap.
+cards.openDetail(card)
+cards.openDetail(card)
+#expect(cards.count(of: .cardDetail) == 1)
+cards.resolveFreeze(card, freeze: true)
+#expect(!cards.isPresentingModal)
+
+// shouldSelect is an ordinary method — call it the way the tab bar does.
+#expect(!tabs.shouldSelect(tab: .invest, isReselection: false))
+#expect(tabs.isPresentingModal)     // the gate it presented instead
+#expect(tabs.selectedIndex == 0)    // selection never moved
+```
+
+Programmatic tab selection bypasses `shouldSelect`, so a test that calls `selectFirstTab` is testing selection, not the guard.
+
+### Awaitable navigation
+
+`routeAndWait`, `presentAndWait`, and `present(_:awaiting:)` suspend until the destination leaves. Drive them from a `Task`, then resolve them from the test body:
+
+```swift
+let picking = Task { await cards.present(.limitPicker, awaiting: Decimal.self) }
+await waitUntil { cards.isPresentingModal }
+
+cards.dismissModal()                            // stands in for a swipe-down
+#expect(await picking.value == nil)             // cancellation path
+```
+
+### Don't test
+
+`\.destination` reads as its default in a unit test for the same reason it does in a `#Preview` (nothing was materialised through the framework), views' rendering, or anything that requires poking a view's `@State` to drive navigation — that last one is a design bug to fix, not a test to write.
+
+---
+
 ## Common mistakes — what NOT to generate
 
 ### 1. Wrapping a destination view in `NavigationStack`
@@ -465,14 +768,15 @@ func detail(item: Item) -> some View {
 
 Drop the `NavigationStack`. The parent flow already provides one.
 
-### 2. Concrete coordinator return types
+### 2. Blanket `@ScaffoldingIgnored` on non-route members
 
 ```swift
-// ❌ Macro skips this — it doesn't recognise concrete types as routes.
-func login() -> LoginCoordinator { LoginCoordinator() }
+// ❌ Redundant — properties and Void-returning helpers are never tracked.
+@ScaffoldingIgnored var stack = FlowStack<HomeCoordinator>(root: .home)
+@ScaffoldingIgnored func openSettings() { present(.settings, as: .sheet) }
 ```
 
-Use `any Coordinatable`.
+The macro only considers functions whose return type is in the auto-tracked table (`some View`, `any Coordinatable`, or a tab tuple). Everything else — properties, `Void` methods, concrete types, closures, generics — is ignored automatically. Reserve `@ScaffoldingIgnored` for the cases that genuinely need it: `customize(_:)`, shared view-builder helpers returning `some View`, and non-route coordinator factories.
 
 ### 3. Holding navigation state in a view
 
@@ -558,7 +862,9 @@ When asked to add navigation to a Scaffolding project:
    - View-only → SwiftUI native `.sheet(item:)`.
    - Sub-flow → `present(_:as:)` with a child coordinator.
 4. New routes go on the coordinator as functions returning `some View`, `any Coordinatable`, or a tab tuple. Add the function — the macro generates the case.
-5. Views read the coordinator from `@Environment(MyCoordinator.self)` and call methods on it. Views never store path or sheet booleans for flow-driven navigation.
-6. Cross-coordinator results are delivered by the presenter installing an `onComplete` callback at construction time; the presented coordinator calls the callback then `dismissCoordinator()`.
+5. Don't sprinkle `@ScaffoldingIgnored` on properties or `Void` helpers — the macro never tracks those. Use it only on functions whose return type *is* auto-tracked but that aren't destinations (`customize(_:)`, view-builder helpers, non-route factories).
+6. Views read the coordinator from `@Environment(MyCoordinator.self)` and call methods on it. Views never store path or sheet booleans for flow-driven navigation.
+7. Cross-coordinator results are delivered by the presenter installing an `onComplete` callback at construction time; the presented coordinator calls the callback then `dismissCoordinator()`.
+8. Test navigation against the coordinator, not the UI: link **ScaffoldingTesting**, start from `Coordinator().activated()`, and assert with `depth` / `topDestination` / `isPresentingModal` / `isRoot(_:)` / `hierarchyContains(_:_:as:)`. Reach nested coordinators with `expecting:` in production code and `descendant(ofType:)` in tests.
 
 If you can't figure out which coordinator should own a destination, the answer is usually "the closest existing one" — don't invent new coordinator types just to host one route.

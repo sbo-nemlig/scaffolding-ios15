@@ -28,7 +28,8 @@ public struct ScaffoldableMacro: MemberMacro {
         let isPublic = classDecl.modifiers.contains { modifier in
             modifier.name.text == "public"
         }
-        let injectsCoordinator = parseInjectsCoordinator(from: node)
+        let injectsCoordinator = parseBoolArgument(named: "injectsCoordinator", from: node)
+        let codable = parseBoolArgument(named: "codable", from: node) ?? false
 
         let functions = extractFunctions(from: classDecl)
         let trackedFunctions = try filterTrackedFunctions(functions, coordinatableType: coordinatableType, context: context)
@@ -36,7 +37,8 @@ public struct ScaffoldableMacro: MemberMacro {
         let destinationsEnum = try generateDestinationsEnum(
             className: className,
             functions: trackedFunctions,
-            isPublic: isPublic
+            isPublic: isPublic,
+            codable: codable
         )
 
         var members: [DeclSyntax] = [DeclSyntax(destinationsEnum)]
@@ -53,10 +55,10 @@ public struct ScaffoldableMacro: MemberMacro {
         return members
     }
 
-    private static func parseInjectsCoordinator(from node: AttributeSyntax) -> Bool? {
+    private static func parseBoolArgument(named name: String, from node: AttributeSyntax) -> Bool? {
         guard case let .argumentList(arguments) = node.arguments else { return nil }
         for argument in arguments {
-            guard let label = argument.label?.text, label == "injectsCoordinator" else { continue }
+            guard let label = argument.label?.text, label == name else { continue }
             let valueText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
             if valueText == "true" { return true }
             if valueText == "false" { return false }
@@ -66,6 +68,20 @@ public struct ScaffoldableMacro: MemberMacro {
     
     
     private static func determineCoordinatableType(from classDecl: ClassDeclSyntax) throws -> CoordinatableType {
+        if let type = coordinatableTypeFromInheritance(classDecl) {
+            return type
+        }
+        // The conformance may be spelled through a refining protocol
+        // (`protocol TabFlow: FlowCoordinatable`), which a macro cannot
+        // resolve — it only sees syntax. Fall back to the state container the
+        // coordinator is required to declare, which names the kind exactly.
+        if let type = coordinatableTypeFromStateContainer(classDecl) {
+            return type
+        }
+        throw ScaffoldingMacroError.mustConformToCoordinatable
+    }
+
+    private static func coordinatableTypeFromInheritance(_ classDecl: ClassDeclSyntax) -> CoordinatableType? {
         let inheritanceTypes = classDecl.inheritanceClause?.inheritedTypes.compactMap { type -> String? in
             // Handle attributed types like "@MainActor FlowCoordinatable"
             if let attributedType = type.type.as(AttributedTypeSyntax.self),
@@ -78,16 +94,53 @@ public struct ScaffoldableMacro: MemberMacro {
             }
             return nil
         } ?? []
-        
+
         if inheritanceTypes.contains("TabCoordinatable") {
             return .tab
         } else if inheritanceTypes.contains("RootCoordinatable") {
             return .root
         } else if inheritanceTypes.contains("FlowCoordinatable") {
             return .flow
-        } else {
-            throw ScaffoldingMacroError.mustConformToCoordinatable
         }
+        return nil
+    }
+
+    /// Infers the kind from the declared state container — `FlowStack`,
+    /// `TabItems`, or `Root` — in either spelling:
+    ///
+    /// ```swift
+    /// var stack = FlowStack<HomeCoordinator>(root: .home)   // initializer
+    /// var stack: FlowStack<HomeCoordinator>                 // annotation
+    /// ```
+    private static func coordinatableTypeFromStateContainer(_ classDecl: ClassDeclSyntax) -> CoordinatableType? {
+        for member in classDecl.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+
+            for binding in variable.bindings {
+                if let annotation = binding.typeAnnotation?.type.as(IdentifierTypeSyntax.self),
+                   let type = CoordinatableType(stateContainerName: annotation.name.text) {
+                    return type
+                }
+                if let call = binding.initializer?.value.as(FunctionCallExprSyntax.self),
+                   let name = calleeBaseName(of: call),
+                   let type = CoordinatableType(stateContainerName: name) {
+                    return type
+                }
+            }
+        }
+        return nil
+    }
+
+    /// `FlowStack<X>(root:)` → `FlowStack`; also handles the unspecialized form.
+    private static func calleeBaseName(of call: FunctionCallExprSyntax) -> String? {
+        if let specialization = call.calledExpression.as(GenericSpecializationExprSyntax.self),
+           let reference = specialization.expression.as(DeclReferenceExprSyntax.self) {
+            return reference.baseName.text
+        }
+        if let reference = call.calledExpression.as(DeclReferenceExprSyntax.self) {
+            return reference.baseName.text
+        }
+        return nil
     }
     
     private static func extractFunctions(from classDecl: ClassDeclSyntax) -> [FunctionDeclSyntax] {
@@ -167,19 +220,6 @@ public struct ScaffoldableMacro: MemberMacro {
             return .anyCoordinatable
         }
 
-        // A bare identifier (no whitespace, not a tuple) is treated as a
-        // concrete coordinator type. Consumers should use `some View` for
-        // view returns; a concrete view type would be misclassified here,
-        // which is by design — if you want type-safe return, return your
-        // concrete coordinator.
-        if !typeString.contains("(") &&
-           !typeString.contains(" ") &&
-           !typeString.contains("<") &&
-           !typeString.isEmpty &&
-           typeString.first?.isLetter == true {
-            return .concreteCoordinatable(typeName: typeString)
-        }
-        
         // Check for TabRole variants first (more specific patterns)
         // Order matters: check longer/more specific patterns before shorter ones
         
@@ -230,7 +270,7 @@ public struct ScaffoldableMacro: MemberMacro {
     
     private static func shouldAutoTrackFunction(returnType: ReturnTypeInfo) -> Bool {
         switch returnType {
-        case .someView, .anyCoordinatable, .concreteCoordinatable,
+        case .someView, .anyCoordinatable,
              .coordinatableViewTuple, .viewViewTuple,
              .viewTabRoleTuple, .coordinatableTabRoleTuple,
              .viewViewTabRoleTuple, .coordinatableViewTabRoleTuple:
@@ -243,7 +283,8 @@ public struct ScaffoldableMacro: MemberMacro {
     private static func generateDestinationsEnum(
         className: String,
         functions: [TrackedFunction],
-        isPublic: Bool
+        isPublic: Bool,
+        codable: Bool = false
     ) throws -> EnumDeclSyntax {
         
         // Generate Meta enum cases
@@ -273,8 +314,9 @@ public struct ScaffoldableMacro: MemberMacro {
         }
         
         let accessModifier = isPublic ? "public " : ""
-        
-        let destinationsEnum = try EnumDeclSyntax("\(raw: accessModifier)enum Destinations: Destinationable") {
+        let conformances = codable ? "Destinationable, Codable" : "Destinationable"
+
+        let destinationsEnum = try EnumDeclSyntax("\(raw: accessModifier)enum Destinations: \(raw: conformances)") {
             // typealias Owner = ClassName
             DeclSyntax("\(raw: accessModifier)typealias Owner = \(raw: className)")
             
@@ -518,7 +560,7 @@ public struct ScaffoldableMacro: MemberMacro {
         switch function.returnType {
         case .someView:
             return ".init(\(functionCall), meta: meta, parent: instance)"
-        case .anyCoordinatable, .concreteCoordinatable:
+        case .anyCoordinatable:
             return ".init({ [unowned instance] in \(functionCall) }, meta: meta, parent: instance)"
         case .coordinatableViewTuple:
             return ".init({ [unowned instance] in \(functionCall) }, meta: meta, parent: instance)"
@@ -542,13 +584,22 @@ public struct ScaffoldableMacro: MemberMacro {
 
 enum CoordinatableType {
     case flow, tab, root
+
+    /// Maps a state-container type name to the coordinator kind that owns it.
+    init?(stateContainerName: String) {
+        switch stateContainerName {
+        case "FlowStack": self = .flow
+        case "TabItems": self = .tab
+        case "Root": self = .root
+        default: return nil
+        }
+    }
 }
 
 enum ReturnTypeInfo {
     case void
     case someView
     case anyCoordinatable
-    case concreteCoordinatable(typeName: String)
     case coordinatableViewTuple      // (any Coordinatable, some View)
     case viewViewTuple               // (some View, some View)
     case viewTabRoleTuple            // (some View, TabRole)
