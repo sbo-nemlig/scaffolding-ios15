@@ -80,15 +80,23 @@ tabCoordinator.badge(for: .inbox)           // read back: String?
 
 ## Accessibility identifiers
 
-Give a tab bar item a stable identifier so UI tests and accessibility tools can address it independently of its localized label (a plain `.accessibilityIdentifier()` on the label view never reaches the rendered tab bar item):
+Give a tab bar item a stable identifier so UI tests and accessibility tools can address it independently of its localized label (a plain `.accessibilityIdentifier()` on the label view never reaches the rendered tab bar button):
 
 ```swift
 tabCoordinator.setTabAccessibilityIdentifier("tab.inbox", for: .inbox)
 tabCoordinator.setTabAccessibilityIdentifier(nil, for: .inbox)   // clear
 tabCoordinator.tabAccessibilityIdentifier(for: .inbox)           // read back: String?
+
+// The button reads something other than its title (custom accessibility
+// label, icon-only label): list the labels it may carry.
+tabCoordinator.setTabAccessibilityIdentifier(
+    "tab.basket",
+    matchingLabels: ["Basket", "Shopping basket"],
+    for: .basket
+)
 ```
 
-Identifiers are usually static — set them once in the coordinator's `init`. The framework applies them through the native `TabContent` modifier. With a custom tab bar, read the identifier back and apply `.accessibilityIdentifier` to your own button.
+Identifiers are usually static — set them once in the coordinator's `init`. SwiftUI does not carry a `Tab`'s identifier to the UIKit button UI tests see on a cold launch, so the framework writes identifiers onto the rendered buttons after render and re-applies them whenever the bar is rebuilt (badge change, root swap, trait change). A button is located by its rendered label — the `UITabBarItem` title by default, or `matchingLabels:` when given. In debug builds, an identifier that matched no button is logged under the `Scaffolding` / `TabBarAccessibility` log category. With a custom tab bar (`visibility: .hidden`) the bridge is inactive; read the identifier back and apply `.accessibilityIdentifier` to your own button.
 
 ## Dynamic tabs
 

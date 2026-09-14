@@ -529,6 +529,116 @@ struct TabAccessibilityIdentifierTests {
         tabs.setBadge(nil, for: .home)
         #expect(tabs.tabAccessibilityIdentifier(for: .home) == "tab.home")
     }
+
+    @Test("matching labels are stored with the identifier and reset with it")
+    func matchingLabels() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+
+        tabs.setTabAccessibilityIdentifier("tab.home", matchingLabels: ["Home", "Hjem"], for: .home)
+        #expect(tabs.anyTabItems.tabs[0].accessibilityMatchingLabels == ["Home", "Hjem"])
+        #expect(tabs.anyTabItems.tabs[1].accessibilityMatchingLabels.isEmpty)
+
+        // Re-setting without labels falls back to derived matching.
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+        #expect(tabs.anyTabItems.tabs[0].accessibilityMatchingLabels.isEmpty)
+
+        // Clearing the identifier drops the labels too.
+        tabs.setTabAccessibilityIdentifier("tab.home", matchingLabels: ["Home"], for: .home)
+        tabs.setTabAccessibilityIdentifier(nil, for: .home)
+        #expect(tabs.tabAccessibilityIdentifier(for: .home) == nil)
+        #expect(tabs.anyTabItems.tabs[0].accessibilityMatchingLabels.isEmpty)
+    }
+
+    @Test("the identifier does not participate in the tab's render identity")
+    func identifierOutsideRenderIdentity() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        let before = tabs.anyTabItems.tabs[0].tabRenderIdentity
+
+        // The UIKit bridge writes identifiers onto the rendered buttons, so
+        // changing one must not recreate the `Tab` entry …
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+        #expect(tabs.anyTabItems.tabs[0].tabRenderIdentity == before)
+
+        // … whereas a badge change still does.
+        tabs.setBadge("3", for: .home)
+        #expect(tabs.anyTabItems.tabs[0].tabRenderIdentity != before)
+    }
+}
+
+// MARK: - Tab bar accessibility bridge (platform-neutral parts)
+
+@MainActor
+@Suite("Tab bar accessibility identifier bridge")
+struct TabBarAccessibilityBridgeTests {
+
+    @Test("entries are built for identified tabs only, in tab order")
+    func entries() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        _ = tabs.anyTabItems
+        tabs.appendTab(.settings)
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+        tabs.setTabAccessibilityIdentifier("tab.settings", matchingLabels: ["Settings"], for: .settings)
+        tabs.setBadge("2", for: .settings)
+
+        let entries = TabBarAccessibilityIdentifierEntry.entries(
+            for: tabs.anyTabItems.tabs,
+            tabBarVisibility: .automatic
+        )
+
+        #expect(entries == [
+            TabBarAccessibilityIdentifierEntry(tabIndex: 0, identifier: "tab.home", matchingLabels: [], badge: nil),
+            TabBarAccessibilityIdentifierEntry(tabIndex: 2, identifier: "tab.settings", matchingLabels: ["Settings"], badge: "2"),
+        ])
+    }
+
+    @Test("a hidden tab bar yields no entries — a custom bar identifies its own buttons")
+    func hiddenBarYieldsNothing() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        let tabs = MainTabCoordinator()
+        tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
+
+        let entries = TabBarAccessibilityIdentifierEntry.entries(
+            for: tabs.anyTabItems.tabs,
+            tabBarVisibility: .hidden
+        )
+
+        #expect(entries.isEmpty)
+    }
+
+    @Test("label matching: exact beats containment, trims, ignores case")
+    func matchingStrength() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        typealias M = TabBarAccessibilityLabelMatching
+
+        #expect(M.strength(renderedLabel: "Basket", candidate: " basket ") == .exact)
+        #expect(M.strength(renderedLabel: "Indkøbskurv", candidate: "INDKØBSKURV") == .exact)
+        #expect(M.strength(renderedLabel: "Basket, 3 items", candidate: "Basket") == .contains)
+        #expect(M.strength(renderedLabel: "Home", candidate: "Home & Garden") == .contains)
+        #expect(M.strength(renderedLabel: "Home", candidate: "Profile") == nil)
+        #expect(M.strength(renderedLabel: "", candidate: "Home") == nil)
+        #expect(M.strength(renderedLabel: "Home", candidate: "  ") == nil)
+    }
+
+    @Test("best candidate prefers the exact match and refuses ambiguity")
+    func bestCandidate() {
+        guard #available(iOS 18, macOS 15, *) else { return }
+        typealias M = TabBarAccessibilityLabelMatching
+        let candidates = [["Home"], ["Home & Garden"], ["Profile"]]
+
+        // Exact wins over a containment match on another candidate.
+        #expect(M.bestCandidate(renderedLabels: ["Home"], candidates: candidates) == 0)
+        #expect(M.bestCandidate(renderedLabels: ["Home & Garden"], candidates: candidates) == 1)
+        // Any of the button's rendered labels may carry the match.
+        #expect(M.bestCandidate(renderedLabels: ["Indkøbskurv", "Profile"], candidates: candidates) == 2)
+        // Nothing matches.
+        #expect(M.bestCandidate(renderedLabels: ["Search"], candidates: candidates) == nil)
+        // Two tabs with the same label: never guess.
+        #expect(M.bestCandidate(renderedLabels: ["Home"], candidates: [["Home"], ["Home"]]) == nil)
+        #expect(M.bestCandidate(renderedLabels: ["Home"], candidates: []) == nil)
+    }
 }
 
 /// Sets its tab identifiers from `init`, the way the documentation

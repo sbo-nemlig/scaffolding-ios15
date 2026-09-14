@@ -6,12 +6,19 @@ final class AppCoordinator: @MainActor TabCoordinatable {
     var tabItems = TabItems<AppCoordinator>(tabs: [.planets, .favorites, .search])
 
     init() {
-        // Identifiers belong on the coordinator, not the label view: only
-        // the tab-bar item carries them, and they stay stable while the
-        // visible label gets localized.
+        // Identifiers belong on the coordinator, not the label view: the
+        // framework writes them onto the rendered tab bar buttons, and they
+        // stay stable while the visible label gets localized.
         setTabAccessibilityIdentifier("tab.planets", for: .planets)
         setTabAccessibilityIdentifier("tab.favorites", for: .favorites)
-        setTabAccessibilityIdentifier("tab.search", for: .search)
+        // A button is found by its rendered label. When that is not the
+        // title — here the label carries a custom accessibility label —
+        // list what the button may read.
+        setTabAccessibilityIdentifier(
+            "tab.search",
+            matchingLabels: ["Search", "Find a planet"],
+            for: .search
+        )
     }
 
     func planets() -> (any Coordinatable, some View) {
@@ -23,6 +30,11 @@ final class AppCoordinator: @MainActor TabCoordinatable {
     }
 
     func search() -> (any Coordinatable, some View, TabRole) {
-        (SearchCoordinator(), Label("Search", systemImage: "magnifyingglass"), .search)
+        (
+            SearchCoordinator(),
+            Label("Search", systemImage: "magnifyingglass")
+                .accessibilityLabel("Find a planet"),
+            .search
+        )
     }
 }
