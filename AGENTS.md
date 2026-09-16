@@ -85,7 +85,7 @@ Is it a push/pop on the current stack?
 | Intercept a tab tap (guard, redirect, pop-to-root on re-tap) | override `shouldSelect(tab:isReselection:)` on the `TabCoordinatable` |
 | Atomically replace the entire view hierarchy (auth, onboarding) | `appCoordinator.setRoot(.authenticated)` (on a `RootCoordinatable`) |
 | Switch tabs programmatically | `tabCoordinator.selectFirstTab(.home)` |
-| Make a tab addressable in UI tests | `tabCoordinator.setTabAccessibilityIdentifier("tab.home", for: .home)` — a plain `.accessibilityIdentifier()` on the label view never reaches the tab bar item |
+| Make a tab addressable in UI tests | `tabCoordinator.setTabAccessibilityIdentifier("tab.home", for: .home)` — a plain `.accessibilityIdentifier()` on the label view never reaches the tab bar button; add `matchingLabels:` when the button reads something other than the tab's title |
 | Replace the system tab bar with your own UI | `TabItems(tabs:, visibility: .hidden)` + custom bar view (see *Custom tab bar*) |
 
 Stay native for view-only modals. The native modifier is lighter, requires no coordinator boundary, and avoids the overhead of an extra `Destinations` case.

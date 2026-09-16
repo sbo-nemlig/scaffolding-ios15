@@ -344,6 +344,17 @@ public struct Destination: Identifiable {
     /// if any.
     public internal(set) var accessibilityIdentifier: String?
 
+    /// Labels the rendered tab bar button may carry, used to pair
+    /// ``accessibilityIdentifier`` with the right button after render.
+    ///
+    /// Empty by default: the framework then derives the labels from the
+    /// rendered `UITabBarItem` (its title and accessibility label). Supply
+    /// them through
+    /// ``TabCoordinatable/setTabAccessibilityIdentifier(_:matchingLabels:for:)``
+    /// when derivation cannot work — an icon-only tab, or a label whose
+    /// text is not what the button ends up reading.
+    public internal(set) var accessibilityMatchingLabels: [String] = []
+
     /// How this destination was originally routed (root, push, sheet, or
     /// full-screen cover).
     public var routeType: DestinationType = .root

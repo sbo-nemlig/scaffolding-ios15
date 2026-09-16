@@ -150,7 +150,7 @@ coordinator.removeLastTab(.notifications)
 
 Badges and accessibility identifiers are set on the coordinator too — the
 label view only feeds the native bar, and a plain `.accessibilityIdentifier()`
-on it never reaches the rendered tab bar item:
+on it never reaches the rendered tab bar button:
 
 ```swift
 coordinator.setBadge(3, for: .notifications)
@@ -158,7 +158,12 @@ coordinator.setTabAccessibilityIdentifier("tab.feed", for: .feed)
 ```
 
 That identifier is what a UI test taps, independently of the label's
-localized text.
+localized text. The framework writes it onto the rendered button after
+render and re-applies it whenever the bar is rebuilt, locating the button by
+the tab's label. If a tab's button reads something other than its title (an
+icon-only label, a custom `.accessibilityLabel`), pass the labels it may
+carry with `matchingLabels:`; in debug builds a log line tells you when an
+identifier matched no button.
 
 On iOS 18+ you can also include a `TabRole` as a third tuple element to use
 the new tab bar API.

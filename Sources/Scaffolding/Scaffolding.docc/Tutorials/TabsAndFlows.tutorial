@@ -74,9 +74,13 @@
                 rarely change, so `init` is the natural place for them.
 
                 > A plain `.accessibilityIdentifier()` on the label view never
-                reaches the rendered tab bar item — SwiftUI only honours the
-                identifier applied to the tab itself, which is what
-                `setTabAccessibilityIdentifier(_:for:)` does.
+                reaches the rendered tab bar button, and SwiftUI applies an
+                identifier set on the tab itself too late for UI tests to see
+                it on a cold launch. `setTabAccessibilityIdentifier(_:for:)`
+                therefore writes the identifier onto the rendered button after
+                render, finding it by the tab's label. Pass `matchingLabels:`
+                when a tab's button reads something other than its title —
+                an icon-only label, or a custom `.accessibilityLabel`.
 
                 @Code(name: "AppCoordinator.swift", file: "tabs-05-accessibility.swift")
             }

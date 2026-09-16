@@ -307,12 +307,20 @@ extension TabItems {
         })?.badge
     }
 
-    func setTabAccessibilityIdentifier(_ identifier: String?, forFirst meta: Coordinator.Destinations.Meta) {
+    func setTabAccessibilityIdentifier(
+        _ identifier: String?,
+        matchingLabels: [String] = [],
+        forFirst meta: Coordinator.Destinations.Meta
+    ) {
         guard let index = tabs.firstIndex(where: { destination in
             guard let destinationMeta = destination.meta as? Coordinator.Destinations.Meta else { return false }
             return destinationMeta == meta
         }) else { return }
         tabs[index].accessibilityIdentifier = identifier
+        // Labels only make sense alongside an identifier; clearing the
+        // identifier (or re-setting it without labels) resets them so the
+        // bridge falls back to deriving them from the rendered item.
+        tabs[index].accessibilityMatchingLabels = identifier == nil ? [] : matchingLabels
     }
 
     func tabAccessibilityIdentifier(forFirst meta: Coordinator.Destinations.Meta) -> String? {

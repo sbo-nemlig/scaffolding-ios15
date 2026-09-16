@@ -299,13 +299,32 @@ public extension TabCoordinatable {
     /// Sets or clears the accessibility identifier on the **first** tab
     /// matching the given destination.
     ///
-    /// The identifier is applied to the rendered tab bar item, so UI tests
-    /// and accessibility tools can address the tab independently of its
-    /// localized label:
+    /// The identifier is written onto the rendered tab bar button, so UI
+    /// tests and accessibility tools can address the tab independently of
+    /// its localized label:
     ///
     /// ```swift
     /// tabCoordinator.setTabAccessibilityIdentifier("tab.home", for: .home)
     /// ```
+    ///
+    /// SwiftUI does not reliably carry an identifier from a `Tab` to the
+    /// `UIKit` button that UI tests see, so the framework applies it after
+    /// render and re-applies it whenever the bar is rebuilt. The button is
+    /// found by its rendered label — by default the title of the tab's
+    /// `UITabBarItem`. When that cannot work (an icon-only label, or a
+    /// label whose text differs from what the button ends up reading) pass
+    /// the labels the button carries:
+    ///
+    /// ```swift
+    /// tabCoordinator.setTabAccessibilityIdentifier(
+    ///     "tab.basket",
+    ///     matchingLabels: ["Basket", "Indkøbskurv"],
+    ///     for: .basket
+    /// )
+    /// ```
+    ///
+    /// In debug builds the framework logs when an identifier could not be
+    /// applied to any button once the tab bar is on screen.
     ///
     /// With a custom tab bar (``TabItems`` created with
     /// `visibility: .hidden`), apply the identifier to your own button
@@ -313,12 +332,19 @@ public extension TabCoordinatable {
     ///
     /// - Parameters:
     ///   - identifier: The accessibility identifier, or `nil` to remove it.
+    ///   - matchingLabels: Labels the rendered button may carry, matched
+    ///     case-insensitively. Empty (the default) derives them from the
+    ///     rendered `UITabBarItem`.
     ///   - tab: The destination meta of the tab.
     /// - Returns: `self` for chaining.
     @discardableResult
-    func setTabAccessibilityIdentifier(_ identifier: String?, for tab: Destinations.Meta) -> Self {
+    func setTabAccessibilityIdentifier(
+        _ identifier: String?,
+        matchingLabels: [String] = [],
+        for tab: Destinations.Meta
+    ) -> Self {
         _ = anyTabItems // resolve tabs before the first render if needed
-        tabItems.setTabAccessibilityIdentifier(identifier, forFirst: tab)
+        tabItems.setTabAccessibilityIdentifier(identifier, matchingLabels: matchingLabels, forFirst: tab)
         return self
     }
 
@@ -678,13 +704,16 @@ public extension TabCoordinatable {
 }
 
 @available(iOS 18, macOS 15, *)
-private extension Destination {
+extension Destination {
     /// Identity used when rendering tabs on the `Tab` builder API. Includes
-    /// the badge and accessibility identifier because `TabView` (observed on
-    /// iOS 26) does not apply changes to an already-created `Tab`; folding
-    /// them into the identity recreates the tab entry whenever either changes.
+    /// the badge because `TabView` (observed on iOS 26) does not apply
+    /// changes to an already-created `Tab`; folding it into the identity
+    /// recreates the tab entry whenever it changes. The accessibility
+    /// identifier is deliberately not part of it: the UIKit bridge writes
+    /// identifiers onto the rendered buttons itself, so a change needs no
+    /// tab recreation.
     var tabRenderIdentity: String {
-        "\(id)|\(badge ?? "")|\(accessibilityIdentifier ?? "")"
+        "\(id)|\(badge ?? "")"
     }
 }
 
@@ -758,8 +787,13 @@ public struct TabCoordinatableView: CoordinatableView {
                 // TabContent, not the content view — the view-level modifier
                 // is ignored inside `Tab { }`.
                 .badge(tab.badge.map(Text.init))
-                // Likewise for the accessibility identifier: only the
-                // TabContent modifier reaches the rendered tab bar item.
+                // The accessibility identifier reaches the `UITabBarItem`
+                // through this modifier, but only once the accessibility
+                // system first queries the app, and the tab bar buttons copy
+                // it only when they are constructed — so on its own it never
+                // shows up in a UI test on a cold launch. It stays here as
+                // the pairing check for the bridge below, which writes the
+                // identifier onto the rendered buttons.
                 .accessibilityIdentifier(
                     tab.accessibilityIdentifier ?? "",
                     isEnabled: tab.accessibilityIdentifier != nil
@@ -767,6 +801,7 @@ public struct TabCoordinatableView: CoordinatableView {
             }
         }
         .background(TabBadgeSync(coordinator: _coordinator, trigger: $badgeRefreshTrigger))
+        .background(TabBarAccessibilityIdentifierSync(coordinator: _coordinator))
     }
 
     private func modals(of type: ModalPresentationType) -> [Destination] {

@@ -365,7 +365,7 @@ final class AuthenticatedCoordinator: @MainActor TabCoordinatable {
 Three upgrades come for free once you're on ``TabItems``: badges
 (`setBadge("3", for: .todos)`), per-tab accessibility identifiers
 (`setTabAccessibilityIdentifier("tab.todos", for: .todos)`, which reaches
-the rendered tab bar item where a modifier on the label view does not), and
+the rendered tab bar button where a modifier on the label view does not), and
 tab-bar visibility control — none of which Stinsen's `TabChild` tracked. Note that programmatic selection
 (`selectFirstTab`, `select(index:)`) bypasses `shouldSelect` — the hook
 only intercepts taps on the tab bar, where Stinsen's `onTapped` fired
