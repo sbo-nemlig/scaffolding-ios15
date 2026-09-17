@@ -550,8 +550,8 @@ struct TabAccessibilityIdentifierTests {
         #expect(tabs.anyTabItems.tabs[0].accessibilityMatchingLabels.isEmpty)
     }
 
-    @Test("the identifier does not participate in the tab's render identity")
-    func identifierOutsideRenderIdentity() {
+    @Test("neither the identifier nor the badge participates in the tab's render identity")
+    func presentationOutsideRenderIdentity() {
         guard #available(iOS 18, macOS 15, *) else { return }
         let tabs = MainTabCoordinator()
         let before = tabs.anyTabItems.tabs[0].tabRenderIdentity
@@ -561,9 +561,11 @@ struct TabAccessibilityIdentifierTests {
         tabs.setTabAccessibilityIdentifier("tab.home", for: .home)
         #expect(tabs.anyTabItems.tabs[0].tabRenderIdentity == before)
 
-        // … whereas a badge change still does.
+        // … and neither must a badge change: the badge reaches `TabView`
+        // through `TabBadgeSync`, and recreating the tab would tear down its
+        // content.
         tabs.setBadge("3", for: .home)
-        #expect(tabs.anyTabItems.tabs[0].tabRenderIdentity != before)
+        #expect(tabs.anyTabItems.tabs[0].tabRenderIdentity == before)
     }
 }
 
