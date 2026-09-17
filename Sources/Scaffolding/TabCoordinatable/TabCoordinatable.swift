@@ -705,15 +705,16 @@ public extension TabCoordinatable {
 
 @available(iOS 18, macOS 15, *)
 extension Destination {
-    /// Identity used when rendering tabs on the `Tab` builder API. Includes
-    /// the badge because `TabView` (observed on iOS 26) does not apply
-    /// changes to an already-created `Tab`; folding it into the identity
-    /// recreates the tab entry whenever it changes. The accessibility
-    /// identifier is deliberately not part of it: the UIKit bridge writes
-    /// identifiers onto the rendered buttons itself, so a change needs no
-    /// tab recreation.
+    /// Identity used when rendering tabs on the `Tab` builder API: the tab's
+    /// own id, and nothing else. Recreating a `Tab` entry tears down and
+    /// rebuilds the tab's content — and with it the child coordinator's
+    /// rendered state — so nothing that merely changes a tab's presentation
+    /// may participate in this identity. Neither the badge nor the
+    /// accessibility identifier does: badge changes reach `TabView` through
+    /// the `@State` bump ``TabBadgeSync`` performs, and the UIKit bridge
+    /// writes identifiers onto the rendered buttons itself.
     var tabRenderIdentity: String {
-        "\(id)|\(badge ?? "")"
+        "\(id)"
     }
 }
 
@@ -767,10 +768,6 @@ public struct TabCoordinatableView: CoordinatableView {
 
     private func flowCoordinatableView() -> some View {
         TabView(selection: _coordinator.selectedTabBinding) {
-            // The badge participates in each tab's identity: TabView applies
-            // `.badge` only when a `Tab` is created, ignoring later changes,
-            // so a badge change must recreate that tab's `Tab` entry.
-            // Selection is keyed by `tab.id` and survives the recreation.
             ForEach(_coordinator.anyTabItems.tabs, id: \.tabRenderIdentity) { tab in
                 Tab(value: tab.id, role: tab.tabRole) {
                     wrappedView(tab)
